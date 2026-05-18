@@ -17,20 +17,21 @@ fn lines_per_page() -> usize {
 
 // ── Word wrap à 95 colonnes (Courier monospace) ────────────────────────────────
 
-fn wrap_lines(text: &str) -> Vec<String> {
-    const MAX_COLS: usize = 95;
-    let mut result = Vec::new();
+fn char_byte_index(s: &str, char_count: usize) -> usize {
+    s.char_indices().nth(char_count).map(|(i, _)| i).unwrap_or(s.len())
+}
 
+/// Découpe le texte en lignes de `max_cols` colonnes max (safe UTF-8).
+pub(crate) fn wrap_text(text: &str, max_cols: usize) -> Vec<String> {
+    let mut result = Vec::new();
     for raw_line in text.lines() {
-        if raw_line.len() <= MAX_COLS {
+        if raw_line.chars().count() <= max_cols {
             result.push(raw_line.to_string());
         } else {
             let mut remaining = raw_line;
-            while remaining.len() > MAX_COLS {
-                // Coupe au dernier espace avant MAX_COLS
-                let cut = remaining[..MAX_COLS]
-                    .rfind(' ')
-                    .unwrap_or(MAX_COLS);
+            while remaining.chars().count() > max_cols {
+                let safe_end = char_byte_index(remaining, max_cols);
+                let cut = remaining[..safe_end].rfind(' ').unwrap_or(safe_end);
                 result.push(remaining[..cut].to_string());
                 remaining = remaining[cut..].trim_start();
             }
@@ -40,6 +41,10 @@ fn wrap_lines(text: &str) -> Vec<String> {
         }
     }
     result
+}
+
+fn wrap_lines(text: &str) -> Vec<String> {
+    wrap_text(text, 95)
 }
 
 // ── Helper : écrit un bloc de lignes sur un calque PDF ─────────────────────────
@@ -181,7 +186,7 @@ fn extract_text_from_html(input_path: &str) -> Result<String> {
 
     let mut result = String::new();
     let mut in_tag = false;
-    let mut in_script = false;
+    let mut in_skip = false; // script / style / head → on ignore le contenu
     let mut tag_buf = String::new();
 
     for ch in html.chars() {
@@ -192,20 +197,26 @@ fn extract_text_from_html(input_path: &str) -> Result<String> {
             }
             '>' => {
                 let tag = tag_buf.trim().to_lowercase();
-                if tag.starts_with("script") {
-                    in_script = true;
-                } else if tag.starts_with("/script") {
-                    in_script = false;
-                } else if tag.starts_with("br") || tag.starts_with("p") || tag.starts_with("/p")
-                    || tag.starts_with("div") || tag.starts_with("/div")
-                    || tag.starts_with("li")
-                {
-                    result.push('\n');
+                // Balises dont le contenu est à ignorer
+                if tag.starts_with("script") || tag.starts_with("style") || tag.starts_with("head") {
+                    in_skip = true;
+                } else if tag.starts_with("/script") || tag.starts_with("/style") || tag.starts_with("/head") {
+                    in_skip = false;
+                } else if !in_skip {
+                    // Balises structurelles → retour à la ligne
+                    if tag.starts_with("br") || tag.starts_with("p") || tag.starts_with("/p")
+                        || tag.starts_with("div") || tag.starts_with("/div")
+                        || tag.starts_with("li") || tag.starts_with("h1") || tag.starts_with("h2")
+                        || tag.starts_with("h3") || tag.starts_with("h4") || tag.starts_with("h5")
+                        || tag.starts_with("h6") || tag.starts_with("tr")
+                    {
+                        result.push('\n');
+                    }
                 }
                 in_tag = false;
             }
             _ if in_tag => tag_buf.push(ch),
-            _ if !in_script => result.push(ch),
+            _ if !in_skip => result.push(ch),
             _ => {}
         }
     }

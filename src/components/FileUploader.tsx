@@ -30,7 +30,7 @@ export function FileUploader({ onFilesAdded }: Props) {
       else if (event.payload.type === "leave") setIsDragging(false);
       else if (event.payload.type === "drop") {
         setIsDragging(false);
-        const paths: string[] = (event.payload as any).paths ?? [];
+        const paths: string[] = (event.payload as { type: "drop"; paths: string[] }).paths ?? [];
         await handlePaths(paths);
       }
     }).then((fn) => { unlisten = fn; });
@@ -48,7 +48,7 @@ export function FileUploader({ onFilesAdded }: Props) {
 
         // Format par défaut : mémorisé > premier format différent de l'entrée
         const memorized = memory[ext];
-        const defaultFmt = (memorized && formats.includes(memorized))
+        const defaultFmt = (memorized && memorized !== ext && formats.includes(memorized))
           ? memorized
           : (formats.find((f) => f !== ext) ?? formats[0] ?? "");
 
@@ -69,7 +69,7 @@ export function FileUploader({ onFilesAdded }: Props) {
         }
 
         return {
-          id: `${Date.now()}-${Math.random()}`,
+          id: crypto.randomUUID(),
           name, path: p, extension: ext,
           availableFormats: formats,
           selectedFormat: defaultFmt,

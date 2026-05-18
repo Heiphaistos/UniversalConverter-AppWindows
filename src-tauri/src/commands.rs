@@ -1,5 +1,5 @@
 use crate::conversion_engine::{
-    build_output_path, build_output_path_custom, convert_image_file, convert_svg_to_image,
+    build_output_path_custom, convert_image_file, convert_svg_to_image,
     generate_thumbnail, get_available_formats, svg_to_dynamic_image, ImageOptions, OutputFormat,
 };
 use crate::office_engine::{
@@ -17,6 +17,36 @@ use crate::text_engine::{
     create_pdf_from_text, html_to_pdf, html_to_txt,
     md_to_html, md_to_pdf, md_to_txt, txt_to_pdf,
 };
+
+// ── Taille maximale de fichier acceptée ───────────────────────────────────────
+
+const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500 MB
+
+// ── Validation du chemin de sortie (anti path traversal) ──────────────────────
+
+fn validate_output_path(path: &str) -> Result<(), String> {
+    use std::path::Component;
+    for component in std::path::Path::new(path).components() {
+        if matches!(component, Component::ParentDir) {
+            return Err("Chemin de sortie invalide : séquence '..' interdite".to_string());
+        }
+    }
+    Ok(())
+}
+
+// ── Chemin de fichier temporaire unique (temp dir système) ────────────────────
+
+fn unique_tmp(ext: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir()
+        .join(format!("uc_{}_{}.tmp", ts, ext))
+        .to_string_lossy()
+        .to_string()
+}
 
 // ── RAII : suppression garantie des fichiers temporaires ──────────────────────
 
@@ -46,6 +76,18 @@ pub async fn convert_file(
     resize_height: Option<u32>,
     rotation: Option<u32>,
 ) -> Result<ConversionResult, String> {
+    // ── Vérification taille fichier ───────────────────────────────────────────
+    let file_size = std::fs::metadata(&input_path)
+        .map(|m| m.len())
+        .map_err(|e| format!("Fichier introuvable '{}': {}", input_path, e))?;
+    if file_size > MAX_FILE_SIZE {
+        return Err(format!(
+            "Fichier trop volumineux ({:.1} MB). Limite : {} MB.",
+            file_size as f64 / (1024.0 * 1024.0),
+            MAX_FILE_SIZE / (1024 * 1024)
+        ));
+    }
+
     let ext = std::path::Path::new(&input_path)
         .extension()
         .and_then(|e| e.to_str())
@@ -94,7 +136,7 @@ pub async fn convert_file(
         // ── SVG → PDF ─────────────────────────────────────────────────────────
         ("svg", "pdf") => {
             let img = svg_to_dynamic_image(&input_path).map_err(|e| e.to_string())?;
-            let tmp = build_output_path(&input_path, "png") + ".tmp";
+            let tmp = unique_tmp("png");
             let _guard = TempFile(tmp.clone());
             img.save_with_format(&tmp, image::ImageFormat::Png).map_err(|e| e.to_string())?;
             images_to_pdf(&[tmp.clone()], &out).map_err(|e| e.to_string())?;
@@ -149,7 +191,7 @@ pub async fn convert_file(
         ("xlsx"|"xls"|"ods", "json") => { excel_to_json(&input_path, &out).map_err(|e| e.to_string())?; }
         ("xlsx"|"xls"|"ods", "txt")  => { excel_to_txt(&input_path, &out).map_err(|e| e.to_string())?; }
         ("xlsx"|"xls"|"ods", "pdf")  => {
-            let tmp = build_output_path(&input_path, "txt") + ".tmp";
+            let tmp = unique_tmp("txt");
             let _guard = TempFile(tmp.clone());
             excel_to_txt(&input_path, &tmp).map_err(|e| e.to_string())?;
             txt_to_pdf(&tmp, &out).map_err(|e| e.to_string())?;
@@ -160,7 +202,7 @@ pub async fn convert_file(
         ("csv", "xlsx") => { csv_to_xlsx(&input_path, &out).map_err(|e| e.to_string())?; }
         ("csv", "txt")  => { csv_to_txt(&input_path, &out).map_err(|e| e.to_string())?; }
         ("csv", "pdf")  => {
-            let tmp = build_output_path(&input_path, "txt") + ".tmp";
+            let tmp = unique_tmp("txt");
             let _guard = TempFile(tmp.clone());
             csv_to_txt(&input_path, &tmp).map_err(|e| e.to_string())?;
             txt_to_pdf(&tmp, &out).map_err(|e| e.to_string())?;
@@ -189,29 +231,6 @@ pub async fn convert_file(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Protège une valeur CSV contre l'injection de formule (=, +, -, @, TAB, CR).
-fn csv_safe_value(v: &str) -> String {
-    let trimmed = v.trim_start_matches(|c| matches!(c, '\t' | '\r'));
-    if trimmed.starts_with('=')
-        || trimmed.starts_with('+')
-        || trimmed.starts_with('-')
-        || trimmed.starts_with('@')
-    {
-        format!("'{}", v)   // préfixe apostrophe → texte brut dans Excel
-    } else {
-        v.to_string()
-    }
-}
-
-fn csv_quote(v: &str) -> String {
-    let safe = csv_safe_value(v);
-    if safe.contains(',') || safe.contains('"') || safe.contains('\n') {
-        format!("\"{}\"", safe.replace('"', "\"\""))
-    } else {
-        safe
-    }
-}
-
 fn json_to_csv_str(json_str: &str, output_path: &str) -> anyhow::Result<()> {
     use anyhow::anyhow;
     let value: serde_json::Value = serde_json::from_str(json_str)
@@ -229,7 +248,7 @@ fn json_to_csv_str(json_str: &str, output_path: &str) -> anyhow::Result<()> {
         .map(|o| o.keys().cloned().collect())
         .unwrap_or_default();
 
-    let mut csv_output = headers.iter().map(|h| csv_quote(h)).collect::<Vec<_>>().join(",");
+    let mut csv_output = headers.iter().map(|h| crate::office_engine::csv_cell(h)).collect::<Vec<_>>().join(",");
     csv_output.push('\n');
 
     for record in records {
@@ -239,7 +258,7 @@ fn json_to_csv_str(json_str: &str, output_path: &str) -> anyhow::Result<()> {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
                 }).unwrap_or_default();
-                csv_quote(&v)
+                crate::office_engine::csv_cell(&v)
             }).collect();
             csv_output.push_str(&row.join(","));
             csv_output.push('\n');
@@ -262,12 +281,19 @@ pub async fn merge_images_to_pdf(
     image_paths: Vec<String>,
     output_path: String,
 ) -> Result<String, String> {
+    validate_output_path(&output_path)?;
     images_to_pdf(&image_paths, &output_path).map_err(|e| e.to_string())?;
     Ok(output_path)
 }
 
 #[tauri::command]
 pub async fn get_thumbnail(input_path: String) -> Result<String, String> {
+    let size = std::fs::metadata(&input_path)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())?;
+    if size > MAX_FILE_SIZE {
+        return Err(format!("Fichier trop volumineux pour la miniature ({:.1} MB)", size as f64 / (1024.0 * 1024.0)));
+    }
     generate_thumbnail(&input_path).map_err(|e| e.to_string())
 }
 
@@ -289,6 +315,16 @@ pub async fn split_pdf_command(
     pages: Vec<u32>,
     output_path: String,
 ) -> Result<String, String> {
+    validate_output_path(&output_path)?;
+    if pages.is_empty() {
+        return Err("Aucune page sélectionnée".to_string());
+    }
+    let total = pdf_page_count(&input_path).map_err(|e| e.to_string())?;
+    for &p in &pages {
+        if p < 1 || p > total {
+            return Err(format!("Page {} hors limites (1–{})", p, total));
+        }
+    }
     split_pdf(&input_path, &pages, &output_path).map_err(|e| e.to_string())?;
     Ok(output_path)
 }
@@ -298,6 +334,7 @@ pub async fn merge_pdfs_command(
     input_paths: Vec<String>,
     output_path: String,
 ) -> Result<String, String> {
+    validate_output_path(&output_path)?;
     merge_pdfs(&input_paths, &output_path).map_err(|e| e.to_string())?;
     Ok(output_path)
 }
@@ -310,6 +347,7 @@ pub async fn merge_pdfs_mode_command(
     output_path: String,
     mode: String,
 ) -> Result<String, String> {
+    validate_output_path(&output_path)?;
     match mode.as_str() {
         "pages"  => merge_pdfs_pages(&input_paths, &output_path).map_err(|e| e.to_string())?,
         "single" => merge_pdfs_single_page(&input_paths, &output_path).map_err(|e| e.to_string())?,
@@ -323,6 +361,7 @@ pub async fn zip_files_command(
     paths: Vec<String>,
     output_path: String,
 ) -> Result<String, String> {
+    validate_output_path(&output_path)?;
     zip_files(&paths, &output_path).map_err(|e| e.to_string())?;
     Ok(output_path)
 }

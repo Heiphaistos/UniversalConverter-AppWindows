@@ -66,8 +66,8 @@ export function MergePDF({ outputDir, onClose }: Props) {
       });
       setResult(res);
       setStatus("done");
-    } catch (e: any) {
-      setError(String(e));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
       setStatus("error");
     }
   }

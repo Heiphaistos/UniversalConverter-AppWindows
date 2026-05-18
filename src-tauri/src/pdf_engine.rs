@@ -174,7 +174,7 @@ pub fn pdf_to_html(pdf_path: &str, output_path: &str) -> Result<()> {
     Ok(())
 }
 
-fn html_escape(s: &str) -> String {
+pub(crate) fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -253,11 +253,15 @@ pub fn merge_pdfs_pages(input_paths: &[String], output_path: &str) -> Result<()>
         let src_max_id = src.max_id;
         let offset = result.max_id;
 
+        // Vérifier l'overflow avant de renommer les objets
+        result.max_id = result.max_id.checked_add(src_max_id)
+            .ok_or_else(|| anyhow!("Overflow max_id: PDFs trop volumineux pour la fusion"))?;
+
         // Renumber + ajouter tous les objets sources dans result
+        // Sûr : id.0 <= src_max_id et offset + src_max_id <= u32::MAX (vérifié ci-dessus)
         for (id, obj) in src.objects {
             result.objects.insert((id.0 + offset, id.1), renumber_refs(obj, offset));
         }
-        result.max_id += src_max_id;
 
         let new_page_ids: Vec<_> = src_page_ids.iter().map(|id| (id.0 + offset, id.1)).collect();
 
@@ -362,7 +366,7 @@ pub fn merge_pdfs_single_page(input_paths: &[String], output_path: &str) -> Resu
         }
     }
 
-    let lines = wrap_compact(&combined, COLS);
+    let lines = crate::text_engine::wrap_text(&combined, COLS);
     let page_h = (2.0 * MARGIN + lines.len() as f32 * LINE_MM).max(297.0);
 
     let (doc, p0, l0) = printpdf::PdfDocument::new(
@@ -387,24 +391,6 @@ pub fn merge_pdfs_single_page(input_paths: &[String], output_path: &str) -> Resu
     doc.save(&mut BufWriter::new(file))
         .map_err(|e| anyhow!("Sauvegarde: {}", e))?;
     Ok(())
-}
-
-fn wrap_compact(text: &str, max_cols: usize) -> Vec<String> {
-    let mut result = Vec::new();
-    for line in text.lines() {
-        if line.len() <= max_cols {
-            result.push(line.to_string());
-        } else {
-            let mut rem = line;
-            while rem.len() > max_cols {
-                let cut = rem[..max_cols].rfind(' ').unwrap_or(max_cols);
-                result.push(rem[..cut].to_string());
-                rem = rem[cut..].trim_start();
-            }
-            if !rem.is_empty() { result.push(rem.to_string()); }
-        }
-    }
-    result
 }
 
 // ── Images → PDF ──────────────────────────────────────────────────────────────

@@ -233,15 +233,28 @@ pub fn generate_thumbnail(input_path: &str) -> Result<String> {
 
 // ── Génération chemin de sortie ────────────────────────────────────────────────
 
-/// Valide qu'un composant de chemin ne contient pas de séquences dangereuses.
+/// Valide qu'un composant de nom de fichier ne contient pas de séquences dangereuses.
+/// Supprime ou remplace tous les caractères interdits sur Windows/POSIX.
 fn sanitize_name(name: &str) -> String {
-    // Supprimer les séquences traversal et caractères dangereux
-    name.replace("..", "")
+    let s = name
+        .replace('\0', "")
         .replace('/', "_")
         .replace('\\', "_")
-        .replace('\0', "")
-        .trim()
-        .to_string()
+        .replace(':', "_")
+        .replace('*', "_")
+        .replace('?', "_")
+        .replace('"', "_")
+        .replace('<', "_")
+        .replace('>', "_")
+        .replace('|', "_");
+
+    // Supprimer toute séquence "traversal" (.. ou encodages courants)
+    let s = s.replace("..", "");
+
+    // Supprimer les espaces de début/fin et points multiples
+    let s = s.trim().trim_matches('.').to_string();
+
+    if s.is_empty() { "file".to_string() } else { s }
 }
 
 /// Construit le chemin de sortie avec dossier et nom personnalisés optionnels.
@@ -269,7 +282,3 @@ pub fn build_output_path_custom(
     dir.join(format!("{}.{}", stem, new_ext)).to_string_lossy().to_string()
 }
 
-/// Alias simple pour les fichiers temporaires (toujours à côté de la source).
-pub fn build_output_path(input_path: &str, new_ext: &str) -> String {
-    build_output_path_custom(input_path, new_ext, None, None)
-}

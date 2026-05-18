@@ -55,7 +55,7 @@ function FileRow({ file, onUpdate, onConvert, onRemove }: RowProps) {
 
   function handleFormatChange(fmt: string) {
     onUpdate({ selectedFormat: fmt });
-    saveDefaultFormat(file.extension, fmt);
+    if (fmt !== file.extension) saveDefaultFormat(file.extension, fmt);
   }
 
   async function handleSplit() {

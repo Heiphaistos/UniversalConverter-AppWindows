@@ -27,6 +27,12 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showMergePDF, setShowMergePDF] = useState(false);
   const [mergePromptIds, setMergePromptIds] = useState<string[] | null>(null);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+
+  function showToast(msg: string, ok: boolean) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 4000);
+  }
 
   // ── Gestion des fichiers ────────────────────────────────────────────────────
 
@@ -101,10 +107,11 @@ export default function App() {
         saveHistory(next);
         return next;
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearInterval(timer);
       const msg = typeof err === "string" ? err
-        : err?.message ?? JSON.stringify(err);
+        : err instanceof Error ? err.message
+        : JSON.stringify(err);
       updateFile(file.id, { status: "error", progress: 0, errorMessage: msg });
     }
   }
@@ -137,9 +144,9 @@ export default function App() {
         paths: done.map((f) => f.outputPath!),
         outputPath: outPath,
       });
-      alert(`ZIP créé : ${outPath}`);
-    } catch (e: any) {
-      alert(`Erreur ZIP : ${e}`);
+      showToast(`ZIP créé : ${outPath.split(/[\\/]/).pop()}`, true);
+    } catch (e: unknown) {
+      showToast(`Erreur ZIP : ${e instanceof Error ? e.message : String(e)}`, false);
     }
   }
 
@@ -170,7 +177,7 @@ export default function App() {
             </svg>
           </div>
           <h1 className="text-base font-bold">Universal Converter</h1>
-          <span className="text-xs text-slate-500 bg-slate-800 rounded px-2 py-0.5">v1.4.0</span>
+          <span className="text-xs text-slate-500 bg-slate-800 rounded px-2 py-0.5">v1.6.0</span>
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -276,6 +283,16 @@ export default function App() {
           outputDir={outputDir}
           onClose={() => setMergePromptIds(null)}
         />
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl text-sm shadow-xl z-50 border transition-all
+          ${toast.ok
+            ? "bg-green-950/95 border-green-800 text-green-300"
+            : "bg-red-950/95 border-red-800 text-red-300"}`}>
+          {toast.msg}
+        </div>
       )}
     </div>
   );

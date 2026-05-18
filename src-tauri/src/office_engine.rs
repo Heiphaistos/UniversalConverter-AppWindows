@@ -3,7 +3,7 @@ use std::io::Read;
 
 // ── Protection CSV contre l'injection de formule ──────────────────────────────
 
-fn csv_safe(v: &str) -> String {
+pub(crate) fn csv_safe(v: &str) -> String {
     let t = v.trim_start_matches(|c| matches!(c, '\t' | '\r'));
     if t.starts_with('=') || t.starts_with('+') || t.starts_with('-') || t.starts_with('@') {
         format!("'{}", v)
@@ -12,7 +12,7 @@ fn csv_safe(v: &str) -> String {
     }
 }
 
-fn csv_cell(v: &str) -> String {
+pub(crate) fn csv_cell(v: &str) -> String {
     let safe = csv_safe(v);
     if safe.contains(',') || safe.contains('"') || safe.contains('\n') {
         format!("\"{}\"", safe.replace('"', "\"\""))
@@ -36,7 +36,7 @@ pub fn docx_to_html(input_path: &str, output_path: &str) -> Result<()> {
     let body: String = text
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| format!("<p>{}</p>", html_escape(l)))
+        .map(|l| format!("<p>{}</p>", crate::pdf_engine::html_escape(l)))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -58,8 +58,6 @@ pub fn docx_to_html(input_path: &str, output_path: &str) -> Result<()> {
 
 /// Extrait le texte brut d'un fichier PPTX (toutes les slides).
 pub fn pptx_to_text(input_path: &str) -> Result<String> {
-    use std::io::Read;
-
     let file = std::fs::File::open(input_path)
         .map_err(|e| anyhow!("Ouverture '{}': {}", input_path, e))?;
     let mut archive = zip::ZipArchive::new(file)
@@ -280,13 +278,23 @@ pub fn csv_to_xlsx(input_path: &str, output_path: &str) -> Result<()> {
     Ok(())
 }
 
-/// CSV → TXT (lisible, colonnes alignées basiquement).
+/// CSV → TXT (colonnes séparées par tabulation, respecte les cellules quotées).
 pub fn csv_to_txt(input_path: &str, output_path: &str) -> Result<()> {
     let content = std::fs::read_to_string(input_path)
         .map_err(|e| anyhow!("Lecture '{}': {}", input_path, e))?;
-    // Le CSV est déjà lisible, on remplace juste les virgules par des tabulations
-    let txt = content.replace(',', "\t");
-    std::fs::write(output_path, txt)
+
+    let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
+        .has_headers(false)
+        .from_reader(content.as_bytes());
+
+    let mut output = String::new();
+    for result in reader.records() {
+        let record = result.map_err(|e| anyhow!("Ligne CSV: {}", e))?;
+        output.push_str(&record.iter().collect::<Vec<_>>().join("\t"));
+        output.push('\n');
+    }
+    std::fs::write(output_path, output)
         .map_err(|e| anyhow!("Ecriture '{}': {}", output_path, e))?;
     Ok(())
 }
@@ -357,9 +365,3 @@ fn parse_xml_text(xml: &str, text_tag: &[u8], paragraph_tag: &[u8]) -> String {
     output
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}

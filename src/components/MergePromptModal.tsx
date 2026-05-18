@@ -36,8 +36,8 @@ export function MergePromptModal({ fileIds, allFiles, outputDir, onClose }: Prop
       });
       setResult(res);
       setStatus("done");
-    } catch (e: any) {
-      setError(typeof e === "string" ? e : e?.message ?? String(e));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : typeof e === "string" ? e : String(e));
       setStatus("error");
     }
   }
