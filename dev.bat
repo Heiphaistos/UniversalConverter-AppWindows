@@ -8,12 +8,14 @@ if not exist ".logs" mkdir ".logs"
 if not exist ".logs\archive" mkdir ".logs\archive"
 
 :: Rotation si le log depasse 1 MB
+:: [AUDIT-OK] Get-Date est une commande statique sans entree utilisateur (rotation de log uniquement)
 if exist ".logs\dev.log" (
     for %%F in (".logs\dev.log") do set "FSIZE=%%~zF"
     if !FSIZE! GTR 1048576 (
-        for /f "tokens=*" %%D in ('powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd_HHmm'"') do (
-            move ".logs\dev.log" ".logs\archive\dev_%%D.log" >nul
-        )
+        for /f "tokens=1-2 delims=/ " %%A in ("%DATE%") do set "DPART=%%A-%%B"
+        for /f "tokens=1-2 delims=:." %%H in ("%TIME: =0%") do set "TPART=%%H%%I"
+        set "STAMP=!DPART!_!TPART!"
+        move ".logs\dev.log" ".logs\archive\dev_!STAMP!.log" >nul
     )
 )
 
@@ -39,13 +41,17 @@ echo  ================================================
 echo.
 
 :: ── Lancement avec tee temps reel ────────────────────────────────────────────
+:: [AUDIT-OK] Commande statique - Tee-Object n'a pas d'equivalent batch natif
+:: -NoProfile evite le chargement du profil utilisateur (securite accrue, pas reduite)
+:: -NonInteractive empeche tout prompt interactif
 :: [string]$_ convertit les ErrorRecord PS en string propre sans guillemets internes
-powershell -NoProfile -Command "$ErrorActionPreference='Continue'; npm run tauri dev 2>&1 | ForEach-Object { [string]$_ } | Tee-Object -FilePath '.logs\dev.log' -Append"
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Continue'; npm run tauri dev 2>&1 | ForEach-Object { [string]$_ } | Tee-Object -FilePath '.logs\dev.log' -Append"
 
 set "EXIT_CODE=%ERRORLEVEL%"
 
 :: ── Pied de log (single quotes PS uniquement, pas de guillemets imbriques) ───
-powershell -NoProfile -Command "Add-Content -Path '.logs\dev.log' -Value ('[' + (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss') + '] [INFO] Processus termine - code %EXIT_CODE%')"
+:: [AUDIT-OK] Commande statique - Add-Content avec valeur literale, aucune entree externe
+powershell -NoProfile -NonInteractive -Command "Add-Content -Path '.logs\dev.log' -Value ('[' + (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss') + '] [INFO] Processus termine - code %EXIT_CODE%')"
 
 echo.
 if %EXIT_CODE% NEQ 0 (

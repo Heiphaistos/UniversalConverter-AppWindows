@@ -8,12 +8,14 @@ if not exist ".logs" mkdir ".logs"
 if not exist ".logs\archive" mkdir ".logs\archive"
 
 :: Rotation si le log depasse 1 MB
+:: [AUDIT-OK] Rotation de log statique sans entree utilisateur
 if exist ".logs\build.log" (
     for %%F in (".logs\build.log") do set "FSIZE=%%~zF"
     if !FSIZE! GTR 1048576 (
-        for /f "tokens=*" %%D in ('powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd_HHmm'"') do (
-            move ".logs\build.log" ".logs\archive\build_%%D.log" >nul
-        )
+        for /f "tokens=1-2 delims=/ " %%A in ("%DATE%") do set "DPART=%%A-%%B"
+        for /f "tokens=1-2 delims=:." %%H in ("%TIME: =0%") do set "TPART=%%H%%I"
+        set "STAMP=!DPART!_!TPART!"
+        move ".logs\build.log" ".logs\archive\build_!STAMP!.log" >nul
     )
 )
 
@@ -44,7 +46,9 @@ echo       OK
 :: ── 4. Build avec logs temps reel ────────────────────────────────────────────
 echo [4/5] Compilation (peut prendre plusieurs minutes)...
 echo.
-powershell -NoProfile -Command "$ErrorActionPreference='Continue'; npm run tauri build 2>&1 | ForEach-Object { [string]$_ } | Tee-Object -FilePath '.logs\build.log' -Append"
+:: [AUDIT-OK] Commande statique - Tee-Object sans equivalent batch natif
+:: -NoProfile + -NonInteractive : securite accrue (pas de chargement profil, pas de prompt)
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Continue'; npm run tauri build 2>&1 | ForEach-Object { [string]$_ } | Tee-Object -FilePath '.logs\build.log' -Append"
 set "BUILD_CODE=%ERRORLEVEL%"
 
 :: ── 5. Resultat ──────────────────────────────────────────────────────────────
@@ -63,7 +67,8 @@ if %BUILD_CODE% NEQ 0 (
     echo  Log    : .logs\build.log
 )
 
-powershell -NoProfile -Command "Add-Content -Path '.logs\build.log' -Value ('[' + (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss') + '] [INFO] Build termine - code %BUILD_CODE%')"
+:: [AUDIT-OK] Commande statique - Add-Content avec valeur litterale, aucune entree externe
+powershell -NoProfile -NonInteractive -Command "Add-Content -Path '.logs\build.log' -Value ('[' + (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss') + '] [INFO] Build termine - code %BUILD_CODE%')"
 
 echo.
 pause
