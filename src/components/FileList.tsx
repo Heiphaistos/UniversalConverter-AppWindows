@@ -71,7 +71,14 @@ function FileRow({ file, onUpdate, onConvert, onRemove }: RowProps) {
     setSplitStatus("busy");
     try {
       const dir = file.path.split(/[\\/]/).slice(0, -1).join("/");
-      const stem = file.name.replace(/\.[^.]+$/, "");
+      // Sanitiser le stem pour éviter path traversal dans le nom de sortie
+      const rawStem = file.name.replace(/\.[^.]+$/, "");
+      const stem = rawStem
+        .replace(/\0/g, "")
+        .replace(/[/\\:*?"<>|]/g, "_")
+        .replace(/\.\./g, "")
+        .replace(/^\.+|\.+$/g, "")
+        .trim() || "output";
       const outPath = `${dir}/${stem}_pages.pdf`;
       const res = await invoke<string>("split_pdf_command", {
         inputPath: file.path,

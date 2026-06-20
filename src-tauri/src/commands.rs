@@ -22,13 +22,67 @@ use crate::text_engine::{
 
 const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500 MB
 
-// ── Validation du chemin de sortie (anti path traversal) ──────────────────────
+// ── Validation du chemin de sortie (anti path traversal + symlink) ────────────
 
 fn validate_output_path(path: &str) -> Result<(), String> {
     use std::path::Component;
-    for component in std::path::Path::new(path).components() {
+
+    let p = std::path::Path::new(path);
+
+    // Bloquer les chemins UNC (\\server\share)
+    let raw = p.to_string_lossy();
+    if raw.starts_with("\\\\") || raw.starts_with("//") {
+        return Err("Chemin UNC refusé : écriture sur des partages réseau interdite".to_string());
+    }
+
+    // Bloquer les séquences '..'
+    for component in p.components() {
         if matches!(component, Component::ParentDir) {
             return Err("Chemin de sortie invalide : séquence '..' interdite".to_string());
+        }
+    }
+
+    // Canonicaliser via le répertoire parent pour détecter les symlinks/jonctions
+    if let Some(parent) = p.parent() {
+        // Créer le répertoire parent si nécessaire (cas output_dir personnalisé)
+        if !parent.exists() {
+            // Tentative silencieuse de création; l'échec sera géré à l'écriture
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(canonical) = parent.canonicalize() {
+            let s = canonical.to_string_lossy().to_lowercase();
+            let forbidden = [
+                "c:\\windows",
+                "c:\\program files",
+                "c:\\program files (x86)",
+                "c:\\programdata",
+                "c:\\system",
+            ];
+            if forbidden.iter().any(|f| s.starts_with(f)) {
+                return Err(format!(
+                    "Chemin refusé : écriture interdite dans une zone système protégée ({})",
+                    canonical.display()
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ── Validation d'un répertoire de sortie personnalisé ─────────────────────────
+
+fn validate_output_dir(dir: &str) -> Result<(), String> {
+    use std::path::Component;
+    let p = std::path::Path::new(dir);
+    let raw = p.to_string_lossy();
+
+    if raw.starts_with("\\\\") || raw.starts_with("//") {
+        return Err("Répertoire UNC refusé".to_string());
+    }
+    for component in p.components() {
+        if matches!(component, Component::ParentDir) {
+            return Err("Répertoire de sortie invalide : séquence '..' interdite".to_string());
         }
     }
     Ok(())
@@ -76,6 +130,18 @@ pub async fn convert_file(
     resize_height: Option<u32>,
     rotation: Option<u32>,
 ) -> Result<ConversionResult, String> {
+    // ── Validation du répertoire de sortie personnalisé ──────────────────────
+    if let Some(ref dir) = output_dir {
+        validate_output_dir(dir)?;
+    }
+
+    // ── Validation du nom de sortie (interdire '/' '\\' '..' et null bytes) ─
+    if let Some(ref name) = output_name {
+        if name.contains('\0') || name.contains('/') || name.contains('\\') || name.contains("..") {
+            return Err("Nom de sortie invalide : caractères interdits détectés".to_string());
+        }
+    }
+
     // ── Vérification taille fichier ───────────────────────────────────────────
     let file_size = std::fs::metadata(&input_path)
         .map(|m| m.len())
@@ -101,6 +167,9 @@ pub async fn convert_file(
         output_dir.as_deref(),
         output_name.as_deref(),
     );
+
+    // Valider le chemin de sortie final construit
+    validate_output_path(&out)?;
 
     let img_opts = ImageOptions {
         quality,
@@ -282,6 +351,20 @@ pub async fn merge_images_to_pdf(
     output_path: String,
 ) -> Result<String, String> {
     validate_output_path(&output_path)?;
+    // Vérifier la taille de chaque image source
+    for img_path in &image_paths {
+        let size = std::fs::metadata(img_path)
+            .map(|m| m.len())
+            .map_err(|e| format!("Image introuvable '{}': {}", img_path, e))?;
+        if size > MAX_FILE_SIZE {
+            return Err(format!(
+                "Image trop volumineuse ({:.1} MB) : '{}'. Limite : {} MB.",
+                size as f64 / (1024.0 * 1024.0),
+                img_path,
+                MAX_FILE_SIZE / (1024 * 1024)
+            ));
+        }
+    }
     images_to_pdf(&image_paths, &output_path).map_err(|e| e.to_string())?;
     Ok(output_path)
 }

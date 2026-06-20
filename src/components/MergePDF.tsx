@@ -56,7 +56,14 @@ export function MergePDF({ outputDir, onClose }: Props) {
     setStatus("merging");
     setError(null);
     try {
-      const name = outputName.trim() || "merged";
+      // Sanitiser le nom de sortie : interdire '/', '\\', '..', null bytes, et caractères Windows interdits
+      const raw = outputName.trim() || "merged";
+      const name = raw
+        .replace(/\0/g, "")
+        .replace(/[/\\:*?"<>|]/g, "_")
+        .replace(/\.\./g, "")
+        .replace(/^\.+|\.+$/g, "")
+        .trim() || "merged";
       const dir = outputDir ?? pdfs[0].split(/[\\/]/).slice(0, -1).join("/");
       const outPath = `${dir}/${name}.pdf`;
       const res = await invoke<string>("merge_pdfs_mode_command", {
