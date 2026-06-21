@@ -1,6 +1,6 @@
 [package]
 name = "universalconverter"
-version = "1.7.0"
+version = "1.8.0"
 description = "Universal File Converter"
 authors = ["Momo"]
 edition = "2021"
