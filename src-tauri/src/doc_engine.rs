@@ -39,17 +39,20 @@ pub fn html_to_md(input_path: &str, output_path: &str) -> Result<()> {
 pub fn txt_to_html(input_path: &str, output_path: &str) -> Result<()> {
     let text = std::fs::read_to_string(input_path)
         .map_err(|e| anyhow!("Lecture '{}': {}", input_path, e))?;
-    let title = file_stem(input_path);
+    let html = text_to_html_string(&file_stem(input_path), &text);
+    std::fs::write(output_path, html).map_err(|e| anyhow!("Écriture '{}': {}", output_path, e))
+}
+
+fn text_to_html_string(title: &str, text: &str) -> String {
     let body: String = text
         .split("\n\n")
         .map(|block| format!("<p>{}</p>\n", html_escape(block.trim()).replace('\n', "<br>\n")))
         .collect();
-    let html = format!(
+    format!(
         "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>{}</title></head><body>\n{}</body></html>\n",
-        html_escape(&title),
+        html_escape(title),
         body
-    );
-    std::fs::write(output_path, html).map_err(|e| anyhow!("Écriture '{}': {}", output_path, e))
+    )
 }
 
 // ─── EPUB → HTML / TXT ────────────────────────────────────────────────────────
@@ -105,14 +108,19 @@ pub fn epub_to_html(input_path: &str, output_path: &str) -> Result<()> {
 
 /// EPUB → texte brut (balises supprimées, scripts/styles ignorés).
 pub fn epub_to_text(input_path: &str, output_path: &str) -> Result<()> {
+    let text = epub_text_string(input_path)?;
+    std::fs::write(output_path, text)
+        .map_err(|e| anyhow!("Écriture '{}': {}", output_path, e))
+}
+
+fn epub_text_string(input_path: &str) -> Result<String> {
     let chapters = epub_chapters(input_path)?;
     let mut out = String::new();
     for c in &chapters {
         out.push_str(&strip_html_tags(extract_body(c)));
         out.push_str("\n\n");
     }
-    std::fs::write(output_path, out.trim())
-        .map_err(|e| anyhow!("Écriture '{}': {}", output_path, e))
+    Ok(out.trim().to_string())
 }
 
 fn strip_html_tags(html: &str) -> String {
@@ -268,6 +276,10 @@ fn write_docx(paragraphs: Vec<docx_rs::Paragraph>, output_path: &str) -> Result<
 pub fn txt_to_docx(input_path: &str, output_path: &str) -> Result<()> {
     let text = std::fs::read_to_string(input_path)
         .map_err(|e| anyhow!("Lecture '{}': {}", input_path, e))?;
+    text_to_docx(&text, output_path)
+}
+
+fn text_to_docx(text: &str, output_path: &str) -> Result<()> {
     let paragraphs = text
         .lines()
         .map(|line| docx_paragraph(line, None, false))
@@ -300,4 +312,242 @@ pub fn md_to_docx(input_path: &str, output_path: &str) -> Result<()> {
         paragraphs.push(p);
     }
     write_docx(paragraphs, output_path)
+}
+
+// ─── Écriture RTF ─────────────────────────────────────────────────────────────
+
+fn rtf_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '{' => out.push_str("\\{"),
+            '}' => out.push_str("\\}"),
+            '\n' => out.push_str("\\par\n"),
+            '\r' => {}
+            '\t' => out.push_str("\\tab "),
+            c if (c as u32) < 128 => out.push(c),
+            c => {
+                // Unicode : \uN suivi d'un caractère de repli '?' ; N signé 16 bits
+                let code = c as u32;
+                if code <= 32767 {
+                    out.push_str(&format!("\\u{}?", code));
+                } else if code <= 65535 {
+                    out.push_str(&format!("\\u{}?", code as i32 - 65536));
+                } else {
+                    // Hors BMP : paire de substitution
+                    let mut buf = [0u16; 2];
+                    for unit in c.encode_utf16(&mut buf) {
+                        let v = *unit as i32;
+                        out.push_str(&format!("\\u{}?", if v > 32767 { v - 65536 } else { v }));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Texte brut → document RTF (police Calibri 11pt, un \par par ligne).
+pub fn write_rtf(text: &str, output_path: &str) -> Result<()> {
+    let rtf = format!(
+        "{{\\rtf1\\ansi\\deff0{{\\fonttbl{{\\f0 Calibri;}}}}\\f0\\fs22\n{}\n}}",
+        rtf_escape(text)
+    );
+    std::fs::write(output_path, rtf).map_err(|e| anyhow!("Écriture '{}': {}", output_path, e))
+}
+
+// ─── Écriture ODT (OpenDocument Text) ─────────────────────────────────────────
+
+fn xml_escape_odt(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+/// Texte brut → document ODT minimal (mimetype STORED en 1re entrée, exigence ODF).
+pub fn write_odt(text: &str, output_path: &str) -> Result<()> {
+    use std::io::Write;
+    use zip::write::FileOptions;
+
+    let file = std::fs::File::create(output_path)
+        .map_err(|e| anyhow!("Création '{}': {}", output_path, e))?;
+    let mut z = zip::ZipWriter::new(file);
+
+    let stored: FileOptions<()> =
+        FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let deflated: FileOptions<()> =
+        FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    z.start_file("mimetype", stored).map_err(|e| anyhow!("ODT mimetype: {}", e))?;
+    z.write_all(b"application/vnd.oasis.opendocument.text")
+        .map_err(|e| anyhow!("ODT mimetype: {}", e))?;
+
+    let mut content = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-content \
+         xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+         xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+         office:version=\"1.2\"><office:body><office:text>",
+    );
+    for line in text.lines() {
+        content.push_str(&format!("<text:p>{}</text:p>", xml_escape_odt(line)));
+    }
+    content.push_str("</office:text></office:body></office:document-content>");
+
+    z.start_file("content.xml", deflated).map_err(|e| anyhow!("ODT content: {}", e))?;
+    z.write_all(content.as_bytes()).map_err(|e| anyhow!("ODT content: {}", e))?;
+
+    z.start_file("styles.xml", deflated).map_err(|e| anyhow!("ODT styles: {}", e))?;
+    z.write_all(
+        b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles \
+          xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" office:version=\"1.2\"/>",
+    )
+    .map_err(|e| anyhow!("ODT styles: {}", e))?;
+
+    z.start_file("META-INF/manifest.xml", deflated).map_err(|e| anyhow!("ODT manifest: {}", e))?;
+    z.write_all(
+        b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest \
+          xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\">\
+          <manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\
+          <manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\
+          <manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\
+          </manifest:manifest>",
+    )
+    .map_err(|e| anyhow!("ODT manifest: {}", e))?;
+
+    z.finish().map_err(|e| anyhow!("ODT finish: {}", e))?;
+    Ok(())
+}
+
+// ─── Lecture ODT / ODP (OpenDocument) ─────────────────────────────────────────
+
+/// Extrait le texte de content.xml d'un fichier OpenDocument (ODT, ODP).
+/// Chaque <text:p> ou <text:h> devient une ligne.
+pub fn odf_to_text(input_path: &str) -> Result<String> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+    use std::io::Read;
+
+    let file = std::fs::File::open(input_path)
+        .map_err(|e| anyhow!("Ouverture '{}': {}", input_path, e))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| anyhow!("OpenDocument invalide: {}", e))?;
+    let mut content = String::new();
+    archive
+        .by_name("content.xml")
+        .map_err(|_| anyhow!("content.xml absent — fichier OpenDocument invalide"))?
+        .read_to_string(&mut content)
+        .map_err(|e| anyhow!("Lecture content.xml: {}", e))?;
+
+    let mut reader = Reader::from_str(&content);
+    let mut out = String::new();
+    let mut depth_p = 0usize;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e)) => {
+                let name = e.name();
+                let local = name.as_ref();
+                if local == b"text:p" || local == b"text:h" {
+                    depth_p += 1;
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let name = e.name();
+                let local = name.as_ref();
+                if depth_p > 0 && (local == b"text:tab" || local == b"text:line-break") {
+                    out.push(if local == b"text:tab" { '\t' } else { '\n' });
+                }
+            }
+            Ok(Event::End(e)) => {
+                let name = e.name();
+                if name.as_ref() == b"text:p" || name.as_ref() == b"text:h" {
+                    depth_p = depth_p.saturating_sub(1);
+                    out.push('\n');
+                }
+            }
+            Ok(Event::Text(t)) => {
+                if depth_p > 0 {
+                    out.push_str(&t.unescape().unwrap_or_default());
+                }
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(e) => return Err(anyhow!("content.xml invalide: {}", e)),
+        }
+    }
+    Ok(out.trim().to_string())
+}
+
+// ─── Pipeline générique documents (pivot texte) ───────────────────────────────
+
+/// Markdown → texte brut via pulldown-cmark (syntaxe supprimée).
+fn md_strip(md: &str) -> String {
+    use pulldown_cmark::{Event, Parser, TagEnd};
+    let mut out = String::new();
+    for ev in Parser::new(md) {
+        match ev {
+            Event::Text(t) | Event::Code(t) => out.push_str(&t),
+            Event::SoftBreak | Event::HardBreak => out.push('\n'),
+            Event::End(TagEnd::Paragraph)
+            | Event::End(TagEnd::Heading(_))
+            | Event::End(TagEnd::Item)
+            | Event::End(TagEnd::CodeBlock) => out.push('\n'),
+            _ => {}
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Extraction texte de n'importe quel format document supporté.
+pub fn doc_to_text(input_path: &str, ext: &str) -> Result<String> {
+    match ext {
+        "txt" => std::fs::read_to_string(input_path)
+            .map_err(|e| anyhow!("Lecture '{}': {}", input_path, e)),
+        "md" | "markdown" => {
+            let raw = std::fs::read_to_string(input_path)
+                .map_err(|e| anyhow!("Lecture '{}': {}", input_path, e))?;
+            Ok(md_strip(&raw))
+        }
+        "html" | "htm" => {
+            let raw = std::fs::read_to_string(input_path)
+                .map_err(|e| anyhow!("Lecture '{}': {}", input_path, e))?;
+            Ok(strip_html_tags(&raw).trim().to_string())
+        }
+        "pdf" => crate::pdf_engine::extract_text_from_pdf(input_path),
+        "docx" | "doc" => crate::office_engine::docx_to_text(input_path),
+        "pptx" | "ppt" => crate::office_engine::pptx_to_text(input_path),
+        "rtf" => {
+            let raw = std::fs::read_to_string(input_path)
+                .map_err(|e| anyhow!("Lecture '{}': {}", input_path, e))?;
+            crate::data_engine::rtf_extract(&raw)
+        }
+        "epub" => epub_text_string(input_path),
+        "odt" | "odp" => odf_to_text(input_path),
+        _ => Err(anyhow!("Extraction texte non supportée pour .{}", ext)),
+    }
+}
+
+/// Écriture du texte extrait vers n'importe quel format de sortie document.
+pub fn text_to_doc(text: &str, title: &str, output_path: &str, fmt: &str) -> Result<()> {
+    match fmt {
+        "txt" | "md" => std::fs::write(output_path, text)
+            .map_err(|e| anyhow!("Écriture '{}': {}", output_path, e)),
+        "html" => std::fs::write(output_path, text_to_html_string(title, text))
+            .map_err(|e| anyhow!("Écriture '{}': {}", output_path, e)),
+        "pdf" => crate::text_engine::create_pdf_from_text(text, output_path),
+        "docx" => text_to_docx(text, output_path),
+        "epub" => {
+            let body: String = text
+                .split("\n\n")
+                .map(|b| format!("<p>{}</p>\n", html_escape(b.trim()).replace('\n', "<br/>\n")))
+                .collect();
+            build_epub(title, &body, output_path)
+        }
+        "rtf" => write_rtf(text, output_path),
+        "odt" => write_odt(text, output_path),
+        _ => Err(anyhow!("Format de sortie document non supporté: {}", fmt)),
+    }
 }

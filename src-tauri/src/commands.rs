@@ -24,8 +24,8 @@ use crate::data_engine::{
     subtitles_to_text, vtt_to_srt,
 };
 use crate::doc_engine::{
-    epub_to_html, epub_to_text, html_to_epub, html_to_md, md_to_docx, md_to_epub,
-    txt_to_docx, txt_to_epub, txt_to_html,
+    doc_to_text, epub_to_html, epub_to_text, html_to_epub, html_to_md, md_to_docx,
+    md_to_epub, text_to_doc, txt_to_docx, txt_to_epub, txt_to_html,
 };
 
 // ── Taille maximale de fichier acceptée ───────────────────────────────────────
@@ -443,6 +443,45 @@ pub async fn convert_file(
             && matches!(f, "wav"|"flac") =>
         {
             convert_audio(&input_path, a, &out, f).map_err(|e| e.to_string())?;
+        }
+
+        // ── Tableurs / data : sorties supplémentaires (chaînage) ──────────────
+        ("xlsx"|"xls"|"ods", "toml"|"xml") => {
+            let tmp = unique_tmp("json");
+            let _guard = TempFile(tmp.clone());
+            excel_to_json(&input_path, &tmp).map_err(|e| e.to_string())?;
+            convert_data(&tmp, "json", &out, fmt.as_str()).map_err(|e| e.to_string())?;
+        }
+        ("xls"|"ods", "xlsx") | ("json"|"yaml"|"yml"|"toml"|"xml", "xlsx") => {
+            let tmp = unique_tmp("csv");
+            let _guard = TempFile(tmp.clone());
+            if matches!(ext.as_str(), "xls"|"ods") {
+                excel_to_csv(&input_path, &tmp).map_err(|e| e.to_string())?;
+            } else {
+                convert_data(&input_path, ext.as_str(), &tmp, "csv").map_err(|e| e.to_string())?;
+            }
+            csv_to_xlsx(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("yaml"|"yml"|"toml"|"xml", "pdf") => {
+            let tmp = unique_tmp("txt");
+            let _guard = TempFile(tmp.clone());
+            convert_data(&input_path, ext.as_str(), &tmp, "txt").map_err(|e| e.to_string())?;
+            txt_to_pdf(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+
+        // ── Pipeline générique documents (pivot texte) ────────────────────────
+        // Couvre toutes les combinaisons doc → doc non traitées plus haut
+        // (RTF/ODT en sortie, ODT/ODP en entrée, PPTX → HTML/DOCX/EPUB, etc.)
+        (d, f)
+            if matches!(d, "pdf"|"txt"|"md"|"markdown"|"html"|"htm"|"docx"|"doc"|"rtf"|"epub"|"odt"|"pptx"|"ppt"|"odp")
+            && matches!(f, "txt"|"md"|"html"|"pdf"|"docx"|"epub"|"rtf"|"odt") =>
+        {
+            let text = doc_to_text(&input_path, d).map_err(|e| e.to_string())?;
+            let title = std::path::Path::new(&input_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "document".to_string());
+            text_to_doc(&text, &title, &out, f).map_err(|e| e.to_string())?;
         }
 
         _ => {

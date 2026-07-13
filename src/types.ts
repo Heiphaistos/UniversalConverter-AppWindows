@@ -89,6 +89,7 @@ export const FORMAT_LABELS: Record<string, string> = {
   svg: "SVG",
   pdf: "PDF", txt: "TXT", html: "HTML", md: "Markdown", rtf: "RTF", epub: "EPUB",
   docx: "Word", doc: "Word (Legacy)", pptx: "PowerPoint", ppt: "PowerPoint (Legacy)",
+  odt: "ODT (Writer)", odp: "ODP (Impress)",
   xlsx: "Excel", xls: "Excel (Legacy)", ods: "ODS",
   csv: "CSV", json: "JSON", yaml: "YAML", yml: "YAML", toml: "TOML", xml: "XML",
   srt: "SRT", vtt: "WebVTT",

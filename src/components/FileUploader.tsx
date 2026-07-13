@@ -94,7 +94,7 @@ export function FileUploader({ onFilesAdded }: Props) {
           extensions: [
             "png","jpg","jpeg","webp","bmp","gif","tiff","tif","tga","pnm","ppm","hdr","ico","svg",
             "qoi","exr","dds","ff",
-            "pdf","txt","md","markdown","html","htm","rtf","epub",
+            "pdf","txt","md","markdown","html","htm","rtf","epub","odt","odp",
             "docx","doc","pptx","ppt",
             "xlsx","xls","ods","csv","json","yaml","yml","toml","xml",
             "srt","vtt",

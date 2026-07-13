@@ -480,6 +480,12 @@ pub fn subtitles_to_text(input_path: &str, output_path: &str) -> Result<()> {
 pub fn rtf_to_text(input_path: &str, output_path: &str) -> Result<()> {
     let raw = std::fs::read_to_string(input_path)
         .map_err(|e| anyhow!("Lecture '{}': {}", input_path, e))?;
+    let text = rtf_extract(&raw)?;
+    std::fs::write(output_path, text).map_err(|e| anyhow!("Écriture '{}': {}", output_path, e))
+}
+
+/// Extraction texte RTF depuis une chaîne brute.
+pub fn rtf_extract(raw: &str) -> Result<String> {
     if !raw.trim_start().starts_with("{\\rtf") {
         return Err(anyhow!("Fichier RTF invalide (en-tête absent)"));
     }
@@ -582,5 +588,5 @@ pub fn rtf_to_text(input_path: &str, output_path: &str) -> Result<()> {
         }
     }
 
-    std::fs::write(output_path, out.trim()).map_err(|e| anyhow!("Écriture '{}': {}", output_path, e))
+    Ok(out.trim().to_string())
 }
