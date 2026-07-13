@@ -92,10 +92,14 @@ export function FileUploader({ onFilesAdded }: Props) {
         {
           name: "Fichiers supportés",
           extensions: [
-            "png","jpg","jpeg","webp","bmp","gif","tiff","tif","tga","pnm","hdr","ico","svg",
-            "pdf","txt","md","markdown","html","htm",
+            "png","jpg","jpeg","webp","bmp","gif","tiff","tif","tga","pnm","ppm","hdr","ico","svg",
+            "qoi","exr","dds","ff",
+            "pdf","txt","md","markdown","html","htm","rtf","epub",
             "docx","doc","pptx","ppt",
-            "xlsx","xls","ods","csv","json",
+            "xlsx","xls","ods","csv","json","yaml","yml","toml","xml",
+            "srt","vtt",
+            "zip","tar","tgz","gz","7z",
+            "mp3","wav","flac","ogg","m4a","aac",
           ],
         },
         { name: "Tous les fichiers", extensions: ["*"] },

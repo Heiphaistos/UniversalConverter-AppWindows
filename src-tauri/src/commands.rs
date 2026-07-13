@@ -17,6 +17,16 @@ use crate::text_engine::{
     create_pdf_from_text, html_to_pdf, html_to_txt,
     md_to_html, md_to_pdf, md_to_txt, txt_to_pdf,
 };
+use crate::archive_engine::convert_archive;
+use crate::audio_engine::convert_audio;
+use crate::data_engine::{
+    convert_data, csv_to_html_table, csv_to_markdown, rtf_to_text, srt_to_vtt,
+    subtitles_to_text, vtt_to_srt,
+};
+use crate::doc_engine::{
+    epub_to_html, epub_to_text, html_to_epub, html_to_md, md_to_docx, md_to_epub,
+    txt_to_docx, txt_to_epub, txt_to_html,
+};
 
 // ── Taille maximale de fichier acceptée ───────────────────────────────────────
 
@@ -182,8 +192,8 @@ pub async fn convert_file(
 
         // ── Images raster → image ─────────────────────────────────────────────
         (img, f)
-            if matches!(img, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"gif"|"tiff"|"tif"|"tga"|"pnm"|"hdr"|"ico")
-            && matches!(f, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"gif"|"tiff"|"tga"|"ico") =>
+            if matches!(img, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"gif"|"tiff"|"tif"|"tga"|"pnm"|"ppm"|"hdr"|"ico"|"qoi"|"exr"|"dds"|"ff")
+            && matches!(f, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"gif"|"tiff"|"tga"|"ico"|"avif"|"qoi"|"exr"|"ppm"|"ff") =>
         {
             let format = OutputFormat::from_str(f).map_err(|e| e.to_string())?;
             convert_image_file(&input_path, &out, &format, &img_opts).map_err(|e| e.to_string())?;
@@ -191,13 +201,13 @@ pub async fn convert_file(
 
         // ── Images raster → PDF ───────────────────────────────────────────────
         (img, "pdf")
-            if matches!(img, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"gif"|"tiff"|"tif"|"tga"|"pnm"|"hdr"|"ico") =>
+            if matches!(img, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"gif"|"tiff"|"tif"|"tga"|"pnm"|"ppm"|"hdr"|"ico"|"qoi"|"exr"|"dds"|"ff") =>
         {
             images_to_pdf(&[input_path.clone()], &out).map_err(|e| e.to_string())?;
         }
 
         // ── SVG → image raster ────────────────────────────────────────────────
-        ("svg", f) if matches!(f, "png"|"jpg"|"jpeg"|"webp"|"bmp") => {
+        ("svg", f) if matches!(f, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"avif"|"qoi") => {
             let format = OutputFormat::from_str(f).map_err(|e| e.to_string())?;
             convert_svg_to_image(&input_path, &out, &format, &img_opts).map_err(|e| e.to_string())?;
         }
@@ -287,6 +297,152 @@ pub async fn convert_file(
             let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             let pretty = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
             std::fs::write(&out, pretty).map_err(|e| e.to_string())?;
+        }
+        ("json", "pdf") => {
+            let raw = std::fs::read_to_string(&input_path).map_err(|e| e.to_string())?;
+            let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            let pretty = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+            create_pdf_from_text(&pretty, &out).map_err(|e| e.to_string())?;
+        }
+
+        // ── Data structurée (JSON / YAML / TOML / XML / CSV) ──────────────────
+        (e2, f)
+            if matches!(e2, "json"|"yaml"|"yml"|"toml"|"xml"|"csv")
+            && matches!(f, "json"|"yaml"|"toml"|"xml"|"csv"|"txt") =>
+        {
+            convert_data(&input_path, e2, &out, f).map_err(|e| e.to_string())?;
+        }
+        ("csv", "md")   => { csv_to_markdown(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("csv", "html") => { csv_to_html_table(&input_path, &out).map_err(|e| e.to_string())?; }
+
+        // ── Excel → YAML / HTML / MD (chaînage via temp) ──────────────────────
+        ("xlsx"|"xls"|"ods", "yaml") => {
+            let tmp = unique_tmp("json");
+            let _guard = TempFile(tmp.clone());
+            excel_to_json(&input_path, &tmp).map_err(|e| e.to_string())?;
+            convert_data(&tmp, "json", &out, "yaml").map_err(|e| e.to_string())?;
+        }
+        ("xlsx"|"xls"|"ods", "html") => {
+            let tmp = unique_tmp("csv");
+            let _guard = TempFile(tmp.clone());
+            excel_to_csv(&input_path, &tmp).map_err(|e| e.to_string())?;
+            csv_to_html_table(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("xlsx"|"xls"|"ods", "md") => {
+            let tmp = unique_tmp("csv");
+            let _guard = TempFile(tmp.clone());
+            excel_to_csv(&input_path, &tmp).map_err(|e| e.to_string())?;
+            csv_to_markdown(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+
+        // ── Déclinaisons documents supplémentaires ────────────────────────────
+        ("pdf", "md") => {
+            let text = extract_text_from_pdf(&input_path).map_err(|e| e.to_string())?;
+            std::fs::write(&out, text).map_err(|e| e.to_string())?;
+        }
+        ("pdf", "docx") => {
+            let text = extract_text_from_pdf(&input_path).map_err(|e| e.to_string())?;
+            let tmp = unique_tmp("txt");
+            let _guard = TempFile(tmp.clone());
+            std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+            txt_to_docx(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("pdf", "epub") => {
+            let text = extract_text_from_pdf(&input_path).map_err(|e| e.to_string())?;
+            let tmp = unique_tmp("txt");
+            let _guard = TempFile(tmp.clone());
+            std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+            txt_to_epub(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("txt", "html") => { txt_to_html(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("txt", "md") => {
+            std::fs::copy(&input_path, &out).map_err(|e| e.to_string())?;
+        }
+        ("txt", "docx") => { txt_to_docx(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("txt", "epub") => { txt_to_epub(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("md"|"markdown", "docx") => { md_to_docx(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("md"|"markdown", "epub") => { md_to_epub(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("html"|"htm", "md") => { html_to_md(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("html"|"htm", "docx") => {
+            let tmp = unique_tmp("txt");
+            let _guard = TempFile(tmp.clone());
+            html_to_txt(&input_path, &tmp).map_err(|e| e.to_string())?;
+            txt_to_docx(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("html"|"htm", "epub") => { html_to_epub(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("docx"|"doc", "md") => {
+            let tmp = unique_tmp("html");
+            let _guard = TempFile(tmp.clone());
+            docx_to_html(&input_path, &tmp).map_err(|e| e.to_string())?;
+            html_to_md(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("docx"|"doc", "epub") => {
+            let tmp = unique_tmp("html");
+            let _guard = TempFile(tmp.clone());
+            docx_to_html(&input_path, &tmp).map_err(|e| e.to_string())?;
+            html_to_epub(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("pptx"|"ppt", "md") => {
+            let text = pptx_to_text(&input_path).map_err(|e| e.to_string())?;
+            std::fs::write(&out, text).map_err(|e| e.to_string())?;
+        }
+
+        // ── RTF ───────────────────────────────────────────────────────────────
+        ("rtf", "txt") => { rtf_to_text(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("rtf", "pdf") => {
+            let tmp = unique_tmp("txt");
+            let _guard = TempFile(tmp.clone());
+            rtf_to_text(&input_path, &tmp).map_err(|e| e.to_string())?;
+            txt_to_pdf(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("rtf", "docx") => {
+            let tmp = unique_tmp("txt");
+            let _guard = TempFile(tmp.clone());
+            rtf_to_text(&input_path, &tmp).map_err(|e| e.to_string())?;
+            txt_to_docx(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("rtf", "html") => {
+            let tmp = unique_tmp("txt");
+            let _guard = TempFile(tmp.clone());
+            rtf_to_text(&input_path, &tmp).map_err(|e| e.to_string())?;
+            txt_to_html(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+
+        // ── EPUB ──────────────────────────────────────────────────────────────
+        ("epub", "txt") => { epub_to_text(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("epub", "html") => { epub_to_html(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("epub", "md") => {
+            let tmp = unique_tmp("html");
+            let _guard = TempFile(tmp.clone());
+            epub_to_html(&input_path, &tmp).map_err(|e| e.to_string())?;
+            html_to_md(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+        ("epub", "pdf") => {
+            let tmp = unique_tmp("txt");
+            let _guard = TempFile(tmp.clone());
+            epub_to_text(&input_path, &tmp).map_err(|e| e.to_string())?;
+            txt_to_pdf(&tmp, &out).map_err(|e| e.to_string())?;
+        }
+
+        // ── Sous-titres ───────────────────────────────────────────────────────
+        ("srt", "vtt") => { srt_to_vtt(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("vtt", "srt") => { vtt_to_srt(&input_path, &out).map_err(|e| e.to_string())?; }
+        ("srt"|"vtt", "txt") => { subtitles_to_text(&input_path, &out).map_err(|e| e.to_string())?; }
+
+        // ── Archives ──────────────────────────────────────────────────────────
+        (a, f)
+            if matches!(a, "zip"|"tar"|"tgz"|"gz"|"7z")
+            && matches!(f, "zip"|"tar"|"tgz") =>
+        {
+            convert_archive(&input_path, a, &out, f).map_err(|e| e.to_string())?;
+        }
+
+        // ── Audio ─────────────────────────────────────────────────────────────
+        (a, f)
+            if matches!(a, "mp3"|"ogg"|"m4a"|"aac"|"wav"|"flac")
+            && matches!(f, "wav"|"flac") =>
+        {
+            convert_audio(&input_path, a, &out, f).map_err(|e| e.to_string())?;
         }
 
         _ => {

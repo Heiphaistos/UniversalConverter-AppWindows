@@ -85,13 +85,18 @@ export function parsePageRange(input: string, total: number): number[] {
 export const FORMAT_LABELS: Record<string, string> = {
   png: "PNG", jpg: "JPEG", webp: "WebP", bmp: "BMP", gif: "GIF",
   tiff: "TIFF", ico: "ICO", tga: "TGA", pnm: "PNM", hdr: "HDR", avif: "AVIF",
+  qoi: "QOI", exr: "EXR", dds: "DDS", ppm: "PPM", ff: "Farbfeld",
   svg: "SVG",
-  pdf: "PDF", txt: "TXT", html: "HTML", md: "Markdown",
+  pdf: "PDF", txt: "TXT", html: "HTML", md: "Markdown", rtf: "RTF", epub: "EPUB",
   docx: "Word", doc: "Word (Legacy)", pptx: "PowerPoint", ppt: "PowerPoint (Legacy)",
   xlsx: "Excel", xls: "Excel (Legacy)", ods: "ODS",
-  csv: "CSV", json: "JSON",
+  csv: "CSV", json: "JSON", yaml: "YAML", yml: "YAML", toml: "TOML", xml: "XML",
+  srt: "SRT", vtt: "WebVTT",
+  zip: "ZIP", tar: "TAR", tgz: "TAR.GZ", gz: "GZ", "7z": "7-Zip",
+  mp3: "MP3", wav: "WAV", flac: "FLAC", ogg: "OGG", m4a: "M4A", aac: "AAC",
 };
 
 export const IMAGE_EXTENSIONS = new Set([
-  "png","jpg","jpeg","webp","bmp","gif","tiff","tif","tga","pnm","hdr","ico","svg",
+  "png","jpg","jpeg","webp","bmp","gif","tiff","tif","tga","pnm","ppm","hdr","ico","svg",
+  "qoi","exr","dds","ff",
 ]);

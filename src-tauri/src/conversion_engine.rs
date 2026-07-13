@@ -15,6 +15,11 @@ pub enum OutputFormat {
     Tiff,
     Ico,
     Tga,
+    Avif,
+    Qoi,
+    Exr,
+    Ppm,
+    Ff,
 }
 
 impl OutputFormat {
@@ -28,6 +33,11 @@ impl OutputFormat {
             "tiff"|"tif" => Ok(OutputFormat::Tiff),
             "ico"        => Ok(OutputFormat::Ico),
             "tga"        => Ok(OutputFormat::Tga),
+            "avif"       => Ok(OutputFormat::Avif),
+            "qoi"        => Ok(OutputFormat::Qoi),
+            "exr"        => Ok(OutputFormat::Exr),
+            "ppm"|"pnm"  => Ok(OutputFormat::Ppm),
+            "ff"         => Ok(OutputFormat::Ff),
             _ => Err(anyhow!("Format image non supporté: {}", s)),
         }
     }
@@ -42,6 +52,11 @@ impl OutputFormat {
             OutputFormat::Tiff => ImageFormat::Tiff,
             OutputFormat::Ico  => ImageFormat::Ico,
             OutputFormat::Tga  => ImageFormat::Tga,
+            OutputFormat::Avif => ImageFormat::Avif,
+            OutputFormat::Qoi  => ImageFormat::Qoi,
+            OutputFormat::Exr  => ImageFormat::OpenExr,
+            OutputFormat::Ppm  => ImageFormat::Pnm,
+            OutputFormat::Ff   => ImageFormat::Farbfeld,
         }
     }
 
@@ -56,6 +71,11 @@ impl OutputFormat {
             OutputFormat::Tiff => "tiff",
             OutputFormat::Ico  => "ico",
             OutputFormat::Tga  => "tga",
+            OutputFormat::Avif => "avif",
+            OutputFormat::Qoi  => "qoi",
+            OutputFormat::Exr  => "exr",
+            OutputFormat::Ppm  => "ppm",
+            OutputFormat::Ff   => "ff",
         }
     }
 }
@@ -112,19 +132,39 @@ fn save_as_jpeg(img: &image::DynamicImage, output_path: &str, quality: u8) -> Re
 
 pub fn get_available_formats(input_ext: &str) -> Vec<&'static str> {
     match input_ext.to_lowercase().as_str() {
-        "png"|"jpg"|"jpeg"|"webp"|"bmp"|"gif"|"tiff"|"tif"|"tga"|"pnm"|"hdr"|"ico" => {
-            vec!["png", "jpg", "webp", "bmp", "gif", "tiff", "tga", "ico", "pdf"]
+        // Images raster (avif : sortie uniquement — décodage non supporté sans lib C)
+        "png"|"jpg"|"jpeg"|"webp"|"bmp"|"gif"|"tiff"|"tif"|"tga"|"pnm"|"ppm"|"hdr"|"ico"|"qoi"|"exr"|"dds"|"ff" => {
+            vec!["png", "jpg", "webp", "bmp", "gif", "tiff", "tga", "ico", "avif", "qoi", "exr", "ppm", "ff", "pdf"]
         }
-        "svg"  => vec!["png", "jpg", "webp", "bmp", "pdf"],
-        "pdf"  => vec!["txt", "html"],
-        "txt"  => vec!["pdf"],
-        "md" | "markdown" => vec!["html", "txt", "pdf"],
-        "html" | "htm"    => vec!["txt", "pdf"],
-        "docx" | "doc"    => vec!["txt", "html", "pdf"],
-        "pptx" | "ppt"    => vec!["txt", "pdf"],
-        "xlsx" | "xls" | "ods" => vec!["csv", "json", "txt", "pdf"],
-        "csv"  => vec!["json", "xlsx", "txt", "pdf"],
-        "json" => vec!["csv", "txt"],
+        "svg"  => vec!["png", "jpg", "webp", "bmp", "avif", "qoi", "pdf"],
+        // Documents
+        "pdf"  => vec!["txt", "html", "md", "docx", "epub"],
+        "txt"  => vec!["pdf", "html", "md", "docx", "epub"],
+        "md" | "markdown" => vec!["html", "txt", "pdf", "docx", "epub"],
+        "html" | "htm"    => vec!["txt", "md", "pdf", "docx", "epub"],
+        "docx" | "doc"    => vec!["txt", "html", "md", "pdf", "epub"],
+        "pptx" | "ppt"    => vec!["txt", "md", "pdf"],
+        "rtf"  => vec!["txt", "pdf", "docx", "html"],
+        "epub" => vec!["txt", "html", "md", "pdf"],
+        // Tableurs & data
+        "xlsx" | "xls" | "ods" => vec!["csv", "json", "yaml", "txt", "html", "md", "pdf"],
+        "csv"  => vec!["json", "yaml", "xml", "xlsx", "txt", "html", "md", "pdf"],
+        "json" => vec!["csv", "yaml", "toml", "xml", "txt", "pdf"],
+        "yaml" | "yml" => vec!["json", "toml", "xml", "txt"],
+        "toml" => vec!["json", "yaml", "xml", "txt"],
+        "xml"  => vec!["json", "yaml", "txt"],
+        // Sous-titres
+        "srt"  => vec!["vtt", "txt"],
+        "vtt"  => vec!["srt", "txt"],
+        // Archives
+        "zip"  => vec!["tar", "tgz"],
+        "tar"  => vec!["zip", "tgz"],
+        "tgz" | "gz" => vec!["zip", "tar"],
+        "7z"   => vec!["zip", "tar", "tgz"],
+        // Audio
+        "mp3" | "ogg" | "m4a" | "aac" => vec!["wav", "flac"],
+        "wav"  => vec!["flac"],
+        "flac" => vec!["wav"],
         _ => vec![],
     }
 }
@@ -148,14 +188,49 @@ pub fn convert_image_file(
         img
     };
 
-    if matches!(format, OutputFormat::Jpeg) {
-        let q = opts.quality.unwrap_or(90).clamp(1, 100);
-        save_as_jpeg(&img, output_path, q)?;
-    } else {
-        img.save_with_format(output_path, format.to_image_format())
-            .map_err(|e| anyhow!("Sauvegarde '{}': {}", output_path, e))?;
+    save_image(&img, output_path, format, opts)
+}
+
+/// Sauvegarde avec adaptation du type de pixels aux exigences de l'encodeur.
+fn save_image(
+    img: &image::DynamicImage,
+    output_path: &str,
+    format: &OutputFormat,
+    opts: &ImageOptions,
+) -> Result<()> {
+    match format {
+        OutputFormat::Jpeg => {
+            let q = opts.quality.unwrap_or(90).clamp(1, 100);
+            save_as_jpeg(img, output_path, q)
+        }
+        // EXR : encodeur float uniquement
+        OutputFormat::Exr => {
+            image::DynamicImage::ImageRgba32F(img.to_rgba32f())
+                .save_with_format(output_path, ImageFormat::OpenExr)
+                .map_err(|e| anyhow!("Sauvegarde '{}': {}", output_path, e))
+        }
+        // Farbfeld : RGBA 16 bits uniquement
+        OutputFormat::Ff => {
+            image::DynamicImage::ImageRgba16(img.to_rgba16())
+                .save_with_format(output_path, ImageFormat::Farbfeld)
+                .map_err(|e| anyhow!("Sauvegarde '{}': {}", output_path, e))
+        }
+        // PPM : RGB 8 bits (pas d'alpha)
+        OutputFormat::Ppm => {
+            image::DynamicImage::ImageRgb8(img.to_rgb8())
+                .save_with_format(output_path, ImageFormat::Pnm)
+                .map_err(|e| anyhow!("Sauvegarde '{}': {}", output_path, e))
+        }
+        // AVIF / QOI : RGBA 8 bits
+        OutputFormat::Avif | OutputFormat::Qoi => {
+            image::DynamicImage::ImageRgba8(img.to_rgba8())
+                .save_with_format(output_path, format.to_image_format())
+                .map_err(|e| anyhow!("Sauvegarde '{}': {}", output_path, e))
+        }
+        _ => img
+            .save_with_format(output_path, format.to_image_format())
+            .map_err(|e| anyhow!("Sauvegarde '{}': {}", output_path, e)),
     }
-    Ok(())
 }
 
 // ── Conversion SVG → image raster ─────────────────────────────────────────────
@@ -168,15 +243,7 @@ pub fn convert_svg_to_image(
 ) -> Result<()> {
     let img = svg_to_dynamic_image(input_path)?;
     let img = apply_transforms(img, opts);
-
-    if matches!(format, OutputFormat::Jpeg) {
-        let q = opts.quality.unwrap_or(90).clamp(1, 100);
-        save_as_jpeg(&img, output_path, q)?;
-    } else {
-        img.save_with_format(output_path, format.to_image_format())
-            .map_err(|e| anyhow!("Sauvegarde '{}': {}", output_path, e))?;
-    }
-    Ok(())
+    save_image(&img, output_path, format, opts)
 }
 
 // ── Rendu SVG → DynamicImage ──────────────────────────────────────────────────

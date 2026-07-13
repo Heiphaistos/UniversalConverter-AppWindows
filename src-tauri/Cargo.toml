@@ -1,6 +1,6 @@
 [package]
 name = "universalconverter"
-version = "1.7.0"
+version = "1.8.0"
 description = "Universal File Converter"
 authors = ["Momo"]
 edition = "2021"
@@ -22,10 +22,10 @@ serde_json = "1"
 anyhow = "1"
 base64 = "0.22"
 
-# Images raster (PNG, JPG, WEBP, BMP, GIF, TIFF, ICO, TGA, PNM, HDR, AVIF)
+# Images raster (PNG, JPG, WEBP, BMP, GIF, TIFF, ICO, TGA, PNM, HDR, AVIF, QOI, EXR, DDS, FF)
 image = { version = "0.25", features = [
     "png", "jpeg", "webp", "bmp", "gif", "tiff", "ico", "tga",
-    "pnm", "hdr", "avif"
+    "pnm", "hdr", "avif", "qoi", "exr", "dds", "ff"
 ] }
 
 # PDF
@@ -52,3 +52,23 @@ rust_xlsxwriter = "0.93"
 
 # CSV
 csv = "1"
+
+# Data structurée (YAML, TOML)
+serde_yaml = "0.9"
+toml = "0.8"
+
+# Archives (TAR, GZ, 7Z — ZIP déjà présent)
+tar = "0.4"
+flate2 = "1"
+sevenz-rust = "0.6"
+
+# Audio : décodage (MP3, AAC/M4A, OGG, FLAC, WAV) + encodage WAV/FLAC
+symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "vorbis", "flac"] }
+hound = "3.5"
+flacenc = "0.4"
+
+# Documents : EPUB lecture/écriture, DOCX écriture, HTML → Markdown
+epub = "2"
+epub-builder = "0.7"
+docx-rs = "0.4"
+htmd = "0.1"

@@ -1,5 +1,9 @@
+mod archive_engine;
+mod audio_engine;
 mod commands;
 mod conversion_engine;
+mod data_engine;
+mod doc_engine;
 mod office_engine;
 mod pdf_engine;
 mod text_engine;
