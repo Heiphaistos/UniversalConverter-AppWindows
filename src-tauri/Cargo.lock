@@ -5877,7 +5877,7 @@ checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
 name = "universalconverter"
-version = "1.8.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

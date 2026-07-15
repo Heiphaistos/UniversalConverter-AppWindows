@@ -1,6 +1,6 @@
 # UniversalConverter
 
-![Version](https://img.shields.io/badge/version-1.7.0-blue)
+![Version](https://img.shields.io/badge/version-1.9.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Stack](https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20React%20%2B%20Rust-orange)
 ![License](https://img.shields.io/badge/license-Propriétaire-red)
@@ -17,17 +17,14 @@ Convertissez images, documents, tableurs, PDF et données structurées sans jama
 
 | Catégorie | Entrée | Sortie |
 |-----------|--------|--------|
-| **Images raster** | PNG, JPG, WebP, BMP, GIF, TIFF, TGA, PNM, HDR, ICO, AVIF | PNG, JPG, WebP, BMP, GIF, TIFF, TGA, ICO, PDF |
-| **Vectoriel** | SVG | PNG, JPG, WebP, BMP, PDF |
-| **PDF** | PDF | TXT, HTML |
-| **Markdown** | MD, Markdown | HTML, TXT, PDF |
-| **HTML** | HTML, HTM | TXT, PDF |
-| **Word** | DOCX, DOC | TXT, HTML, PDF |
-| **PowerPoint** | PPTX, PPT | TXT, PDF |
-| **Excel** | XLSX, XLS, ODS | CSV, JSON, TXT, PDF |
-| **CSV** | CSV | JSON, XLSX, TXT, PDF |
-| **JSON** | JSON | CSV, TXT |
-| **Texte brut** | TXT | PDF |
+| **Images raster** | PNG, JPG, WebP, BMP, GIF, TIFF, TGA, PNM/PPM, HDR, ICO, QOI, EXR, DDS, FF | PNG, JPG, WebP, BMP, GIF, TIFF, TGA, ICO, AVIF, QOI, EXR, PPM, FF, PDF |
+| **Vectoriel** | SVG | PNG, JPG, WebP, BMP, AVIF, QOI, PDF |
+| **Documents** (pivot texte générique) | PDF, TXT, MD, HTML, DOCX, RTF, EPUB, ODT, PPTX, ODP | TXT, HTML, MD, PDF, DOCX, EPUB, RTF, ODT |
+| **Tableurs** | XLSX, XLS, ODS | CSV, JSON, YAML, TOML, XML, XLSX, TXT, HTML, MD, PDF |
+| **Données structurées** | CSV, JSON, YAML, TOML, XML | CSV, JSON, YAML, TOML, XML, XLSX, TXT, HTML, MD, PDF (combinaisons selon format source) |
+| **Sous-titres** | SRT, VTT | SRT, VTT, TXT |
+| **Archives** | ZIP, TAR, TGZ/GZ, 7z | ZIP, TAR, TGZ |
+| **Audio** | MP3, OGG, M4A, AAC, WAV, FLAC | WAV, FLAC |
 
 ### Outils PDF intégrés
 - **Fusion** — combine plusieurs PDFs en un seul (mode pages réelles ou mode condensé)
@@ -99,7 +96,7 @@ Fichier déposé
 
 ### Option 1 : Portable (recommandée)
 
-1. Télécharger `Universal.converter.7z` depuis les [Releases](https://github.com/heiphaistos44-crypto/UniversalConverter/releases/latest)
+1. Télécharger `Universal.converter.7z` depuis les [Releases](https://github.com/Heiphaistos/UniversalConverter-AppWindows/releases/latest)
 2. Extraire l'archive
 3. Lancer `UniversalConverter.exe`
 
@@ -108,8 +105,8 @@ Fichier déposé
 **Prérequis** : Node.js 18+, Rust 1.75+, npm
 
 ```bash
-git clone https://github.com/heiphaistos44-crypto/UniversalConverter.git
-cd UniversalConverter
+git clone https://github.com/Heiphaistos/UniversalConverter-AppWindows.git
+cd UniversalConverter-AppWindows
 npm install
 npm run tauri dev
 ```
@@ -146,14 +143,17 @@ L'exécutable est généré dans `src-tauri/target/release/bundle/`.
 | PDF | `lopdf` v0.33 + `printpdf` v0.7 |
 | Office | `quick-xml` v0.36 + `calamine` v0.26 + `rust_xlsxwriter` v0.93 |
 | Markdown | `pulldown-cmark` v0.11 |
-| CSV/JSON | `csv` v1 + `serde_json` |
-| Archive | `zip` v2 |
+| Data (CSV/JSON/YAML/TOML/XML) | `csv` v1 + `serde_json` + `serde_yaml` + `toml` + `quick-xml` |
+| Sous-titres | SRT/VTT (parseur maison) |
+| Archives | `zip` v2 + `tar` + `flate2` + `sevenz-rust` |
+| Audio | `symphonia` (MP3/OGG/M4A/AAC/WAV/FLAC) |
+| EPUB/RTF/ODT | pipeline pivot texte générique (`doc_engine`) |
 
 ---
 
 ## Auteur
 
-**heiphaistos44-crypto**
+**Heiphaistos**
 
 ---
 
