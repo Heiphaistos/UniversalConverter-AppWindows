@@ -1,6 +1,6 @@
 [package]
 name = "universalconverter"
-version = "1.9.1"
+version = "1.10.0"
 description = "Universal File Converter"
 authors = ["Momo"]
 edition = "2021"
@@ -29,7 +29,7 @@ image = { version = "0.25", features = [
 ] }
 
 # PDF
-lopdf    = "0.33"
+lopdf    = "0.42"
 printpdf = "0.7"
 
 # SVG → raster (pure Rust)
@@ -42,10 +42,10 @@ pulldown-cmark = "0.11"
 zip = "2"
 
 # Office : parsing XML interne (DOCX, PPTX)
-quick-xml = "0.36"
+quick-xml = "0.41"
 
 # Office : lecture Excel (XLS, XLSX, ODS)
-calamine = "0.26"
+calamine = "0.36"
 
 # Office : écriture XLSX
 rust_xlsxwriter = "0.93"
@@ -60,7 +60,7 @@ toml = "0.8"
 # Archives (TAR, GZ, 7Z — ZIP déjà présent)
 tar = "0.4"
 flate2 = "1"
-sevenz-rust = "0.6"
+sevenz-rust2 = "0.22"
 
 # Audio : décodage (MP3, AAC/M4A, OGG, FLAC, WAV) + encodage WAV/FLAC
 symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "vorbis", "flac"] }

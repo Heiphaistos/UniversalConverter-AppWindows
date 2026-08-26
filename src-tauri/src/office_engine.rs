@@ -352,9 +352,10 @@ fn parse_xml_text(xml: &str, text_tag: &[u8], paragraph_tag: &[u8]) -> String {
                 }
             }
             Ok(Event::Text(ref e)) if in_text => {
-                if let Ok(s) = e.unescape() {
-                    output.push_str(&s);
-                }
+                output.push_str(&crate::xml_text(e));
+            }
+            Ok(Event::GeneralRef(ref r)) if in_text => {
+                output.push_str(&crate::xml_entity(r));
             }
             Ok(Event::Eof) => break,
             Err(_) => break,

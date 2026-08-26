@@ -97,7 +97,7 @@ fn read_tar_from<R: Read>(reader: R) -> Result<Vec<Entry>> {
 fn read_7z(input_path: &str) -> Result<Vec<Entry>> {
     let mut entries = Vec::new();
     let mut total: u64 = 0;
-    let mut reader = sevenz_rust::SevenZReader::open(input_path, sevenz_rust::Password::empty())
+    let mut reader = sevenz_rust2::ArchiveReader::open(input_path, sevenz_rust2::Password::empty())
         .map_err(|e| anyhow!("7Z invalide: {}", e))?;
 
     reader
@@ -110,12 +110,12 @@ fn read_7z(input_path: &str) -> Result<Vec<Entry>> {
             };
             total = total.saturating_add(entry.size());
             if total > MAX_TOTAL_BYTES || entries.len() >= MAX_ENTRIES {
-                return Err(sevenz_rust::Error::other("Archive décompressée > 512 MB"));
+                return Err(sevenz_rust2::Error::Other("Archive décompressée > 512 MB".into()));
             }
             let mut data = Vec::new();
             rd.take(MAX_TOTAL_BYTES)
                 .read_to_end(&mut data)
-                .map_err(sevenz_rust::Error::io)?;
+                .map_err(|e| sevenz_rust2::Error::Io(e, "lecture entrée 7z".into()))?;
             entries.push(Entry { name, data });
             Ok(true)
         })

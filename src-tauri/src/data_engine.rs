@@ -118,7 +118,18 @@ fn xml_to_value(raw: &str) -> Result<Value> {
                 }
             }
             Ok(Event::Text(t)) => {
-                let text = t.unescape().unwrap_or_default().to_string();
+                let text = crate::xml_text(&t);
+                if !text.is_empty() {
+                    if let Some((_, map)) = stack.last_mut() {
+                        match map.get_mut("#text") {
+                            Some(Value::String(existing)) => existing.push_str(&text),
+                            _ => { map.insert("#text".into(), Value::String(text)); }
+                        }
+                    }
+                }
+            }
+            Ok(Event::GeneralRef(r)) => {
+                let text = crate::xml_entity(&r);
                 if !text.is_empty() {
                     if let Some((_, map)) = stack.last_mut() {
                         match map.get_mut("#text") {

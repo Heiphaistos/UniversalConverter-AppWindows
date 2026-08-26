@@ -470,7 +470,12 @@ pub fn odf_to_text(input_path: &str) -> Result<String> {
             }
             Ok(Event::Text(t)) => {
                 if depth_p > 0 {
-                    out.push_str(&t.unescape().unwrap_or_default());
+                    out.push_str(&crate::xml_text(&t));
+                }
+            }
+            Ok(Event::GeneralRef(r)) => {
+                if depth_p > 0 {
+                    out.push_str(&crate::xml_entity(&r));
                 }
             }
             Ok(Event::Eof) => break,
