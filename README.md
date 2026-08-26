@@ -1,6 +1,6 @@
 # UniversalConverter
 
-![Version](https://img.shields.io/badge/version-1.9.0-blue)
+![Version](https://img.shields.io/badge/version-1.11.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Stack](https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20React%20%2B%20Rust-orange)
 ![License](https://img.shields.io/badge/license-Propriétaire-red)
