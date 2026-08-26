@@ -79,3 +79,52 @@ mod xml_text_tests {
         assert!(dump.contains("<x>"), "entités lt/gt perdues: {dump}");
     }
 }
+
+#[cfg(test)]
+mod pdf_write_tests {
+    /// Régression printpdf 0.7 -> 0.12 : l'API layer/font a été remplacée par
+    /// des `Op` sur `PdfPage`. Vérifie que le PDF écrit est relisible et que
+    /// le texte survit à l'aller-retour.
+    #[test]
+    fn pdf_ecrit_est_relisible() {
+        let out = std::env::temp_dir().join("uc_printpdf_test.pdf");
+        let out = out.to_str().unwrap();
+        let texte = "Ligne un R&D
+Ligne deux cafe
+Ligne trois";
+
+        crate::text_engine::create_pdf_from_text(texte, out).expect("écriture PDF");
+
+        let meta = std::fs::metadata(out).expect("PDF créé");
+        assert!(meta.len() > 500, "PDF suspicieusement petit: {} octets", meta.len());
+
+        let relu = crate::pdf_engine::extract_text_from_pdf(out).expect("relecture PDF");
+        let _ = std::fs::remove_file(out);
+        for attendu in ["Ligne un", "R&D", "Ligne trois"] {
+            assert!(relu.contains(attendu), "texte perdu ({attendu}) dans: {relu}");
+        }
+    }
+
+    /// Même migration, chemin XObject : `Image::add_to_layer` est devenu
+    /// `Op::UseXobject` + `RawImage`. Vérifie que le PDF image est valide.
+    #[test]
+    fn pdf_image_est_valide() {
+        let png = std::env::temp_dir().join("uc_printpdf_test.png");
+        let out = std::env::temp_dir().join("uc_printpdf_img.pdf");
+        image::RgbImage::from_pixel(32, 16, image::Rgb([200, 30, 30]))
+            .save(&png)
+            .expect("écriture PNG");
+
+        crate::pdf_engine::images_to_pdf(
+            &[png.to_str().unwrap().to_string()],
+            out.to_str().unwrap(),
+        )
+        .expect("écriture PDF image");
+
+        let doc = lopdf::Document::load(&out).expect("PDF image relisible");
+        let pages = doc.get_pages().len();
+        let _ = std::fs::remove_file(&png);
+        let _ = std::fs::remove_file(&out);
+        assert_eq!(pages, 1, "une image = une page");
+    }
+}

@@ -1,9 +1,6 @@
 use anyhow::{anyhow, Result};
 use lopdf::Document;
-use printpdf::{Image, ImageTransform, ImageXObject, Mm, PdfDocument, Px};
-use printpdf::{ColorBits, ColorSpace};
-use std::fs::File;
-use std::io::BufWriter;
+use printpdf::{Mm, Op, PdfDocument, RawImage, RawImageData, RawImageFormat, XObjectTransform};
 
 // ── PDF → Texte ────────────────────────────────────────────────────────────────
 
@@ -260,10 +257,15 @@ pub fn merge_pdfs_pages(input_paths: &[String], output_path: &str) -> Result<()>
         // Renumber + ajouter tous les objets sources dans result
         // Sûr : id.0 <= src_max_id et offset + src_max_id <= u32::MAX (vérifié ci-dessus)
         for (id, obj) in src.objects {
-            result.objects.insert((id.0 + offset, id.1), renumber_refs(obj, offset));
+            let new_id = id.0.checked_add(offset)
+                .ok_or_else(|| anyhow!("Overflow object id lors du renumbering PDF"))?;
+            result.objects.insert((new_id, id.1), renumber_refs(obj, offset));
         }
 
-        let new_page_ids: Vec<_> = src_page_ids.iter().map(|id| (id.0 + offset, id.1)).collect();
+        let new_page_ids: Vec<_> = src_page_ids.iter()
+            .map(|id| id.0.checked_add(offset).map(|new_id| (new_id, id.1)))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| anyhow!("Overflow page id lors du renumbering PDF"))?;
 
         // Mettre à jour Parent de chaque page ajoutée
         for &page_id in &new_page_ids {
@@ -318,7 +320,9 @@ fn get_pages_root_id(doc: &Document) -> Result<lopdf::ObjectId> {
 fn renumber_refs(obj: lopdf::Object, offset: u32) -> lopdf::Object {
     use lopdf::Object;
     match obj {
-        Object::Reference(id) => Object::Reference((id.0 + offset, id.1)),
+        // Utilise saturating_add : en cas d'overflow (normalement impossible vu les vérifications
+        // en amont dans merge_pdfs_pages), on sature à u32::MAX plutôt que de paniquer.
+        Object::Reference(id) => Object::Reference((id.0.saturating_add(offset), id.1)),
         Object::Array(arr) => Object::Array(
             arr.into_iter().map(|o| renumber_refs(o, offset)).collect()
         ),
@@ -347,8 +351,6 @@ fn renumber_refs(obj: lopdf::Object, offset: u32) -> lopdf::Object {
 
 /// Fusionne plusieurs PDFs en une seule page très haute (tout le texte en scroll).
 pub fn merge_pdfs_single_page(input_paths: &[String], output_path: &str) -> Result<()> {
-    use printpdf::BuiltinFont;
-
     const PAGE_W: f32  = 210.0;
     const MARGIN: f32  = 14.0;
     const FONT_PT: f32 = 7.5;
@@ -369,28 +371,10 @@ pub fn merge_pdfs_single_page(input_paths: &[String], output_path: &str) -> Resu
     let lines = crate::text_engine::wrap_text(&combined, COLS);
     let page_h = (2.0 * MARGIN + lines.len() as f32 * LINE_MM).max(297.0);
 
-    let (doc, p0, l0) = printpdf::PdfDocument::new(
-        "UniversalConverter Merge", Mm(PAGE_W), Mm(page_h), "Layer 1"
-    );
-    let font = doc.add_builtin_font(BuiltinFont::Courier)
-        .map_err(|e| anyhow!("Font: {}", e))?;
-
-    let layer = doc.get_page(p0).get_layer(l0);
-    layer.begin_text_section();
-    layer.set_font(&font, FONT_PT);
-    layer.set_text_cursor(Mm(MARGIN), Mm(page_h - MARGIN));
-    layer.set_line_height(LINE_MM * 2.835);
-    for line in &lines {
-        layer.write_text(line.as_str(), &font);
-        layer.add_line_break();
-    }
-    layer.end_text_section();
-
-    let file = File::create(output_path)
-        .map_err(|e| anyhow!("Création '{}': {}", output_path, e))?;
-    doc.save(&mut BufWriter::new(file))
-        .map_err(|e| anyhow!("Sauvegarde: {}", e))?;
-    Ok(())
+    let page = crate::text_engine::text_page(&lines, PAGE_W, page_h, MARGIN, FONT_PT, LINE_MM);
+    let mut doc = PdfDocument::new("UniversalConverter Merge");
+    doc.with_pages(vec![page]);
+    crate::text_engine::save_pdf(&doc, output_path)
 }
 
 // ── Images → PDF ──────────────────────────────────────────────────────────────
@@ -400,52 +384,45 @@ pub fn images_to_pdf(image_paths: &[String], output_path: &str) -> Result<()> {
         return Err(anyhow!("Aucune image fournie"));
     }
 
-    let (doc, page1, layer1) = PdfDocument::new(
-        "UniversalConverter Output",
-        Mm(210.0), Mm(297.0), "Layer 1",
-    );
-    let mut first_page = Some((page1, layer1));
+    const PAGE_W_MM: f32 = 210.0;
+    const PAGE_H_MM: f32 = 297.0;
+
+    let mut doc = PdfDocument::new("UniversalConverter Output");
+    let mut pages = Vec::with_capacity(image_paths.len());
 
     for img_path in image_paths {
         let img = image::open(img_path)
             .map_err(|e| anyhow!("Ouverture '{}': {}", img_path, e))?;
-
         let rgb_img = img.to_rgb8();
         let (w, h) = rgb_img.dimensions();
-        let dpi = (w as f32 * 25.4) / 210.0;
 
-        let image_obj = ImageXObject {
-            width: Px(w as usize),
-            height: Px(h as usize),
-            color_space: ColorSpace::Rgb,
-            bits_per_component: ColorBits::Bit8,
-            interpolate: true,
-            image_data: rgb_img.into_raw(),
-            image_filter: None,
-            clipping_bbox: None,
-            smask: None,
-        };
+        // DPI choisi pour que l'image occupe toute la largeur de page.
+        let dpi = (w as f32 * 25.4) / PAGE_W_MM;
 
-        let pdf_image = Image::from(image_obj);
-
-        let (page_idx, layer_idx) = if let Some(p) = first_page.take() {
-            p
-        } else {
-            doc.add_page(Mm(210.0), Mm(297.0), "Layer 1")
-        };
-
-        let current_layer = doc.get_page(page_idx).get_layer(layer_idx);
-        pdf_image.add_to_layer(current_layer, ImageTransform {
-            translate_x: Some(Mm(0.0)),
-            translate_y: Some(Mm(0.0)),
-            dpi: Some(dpi),
-            ..Default::default()
+        let id = doc.add_image(&RawImage {
+            pixels: RawImageData::U8(rgb_img.into_raw()),
+            width: w as usize,
+            height: h as usize,
+            data_format: RawImageFormat::RGB8,
+            tag: Vec::new(),
         });
+
+        pages.push(printpdf::PdfPage::new(
+            Mm(PAGE_W_MM),
+            Mm(PAGE_H_MM),
+            vec![Op::UseXobject {
+                id,
+                transform: XObjectTransform {
+                    translate_x: Some(Mm(0.0).into()),
+                    translate_y: Some(Mm(0.0).into()),
+                    dpi: Some(dpi),
+                    ..Default::default()
+                },
+            }],
+        ));
     }
 
-    let file = File::create(output_path)
-        .map_err(|e| anyhow!("Création '{}': {}", output_path, e))?;
-    doc.save(&mut BufWriter::new(file))
-        .map_err(|e| anyhow!("Sauvegarde PDF: {}", e))?;
-    Ok(())
+    doc.with_pages(pages);
+    crate::text_engine::save_pdf(&doc, output_path)
 }
+

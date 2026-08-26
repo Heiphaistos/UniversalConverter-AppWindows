@@ -1,6 +1,6 @@
 [package]
 name = "universalconverter"
-version = "1.10.0"
+version = "1.11.0"
 description = "Universal File Converter"
 authors = ["Momo"]
 edition = "2021"
@@ -30,7 +30,7 @@ image = { version = "0.25", features = [
 
 # PDF
 lopdf    = "0.42"
-printpdf = "0.7"
+printpdf = "0.12"
 
 # SVG → raster (pure Rust)
 resvg = "0.44"

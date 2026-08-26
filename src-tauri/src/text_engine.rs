@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
-use printpdf::{BuiltinFont, Mm, PdfDocument};
+use printpdf::{
+    BuiltinFont, Mm, Op, PdfDocument, PdfFontHandle, PdfPage, PdfSaveOptions, Point, Pt, TextItem,
+};
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -10,6 +12,7 @@ const PAGE_H: f32 = 297.0;
 const MARGIN: f32 = 18.0;
 const FONT_SIZE: f32 = 10.0;
 const LINE_H_MM: f32 = 5.0; // hauteur de ligne en mm
+pub(crate) const MM_TO_PT: f32 = 2.834_646; // 72 / 25.4
 
 fn lines_per_page() -> usize {
     ((PAGE_H - 2.0 * MARGIN) / LINE_H_MM) as usize
@@ -47,25 +50,41 @@ fn wrap_lines(text: &str) -> Vec<String> {
     wrap_text(text, 95)
 }
 
-// ── Helper : écrit un bloc de lignes sur un calque PDF ─────────────────────────
-
-fn write_lines_to_layer(
-    doc: &printpdf::PdfDocumentReference,
-    page_idx: printpdf::PdfPageIndex,
-    layer_idx: printpdf::PdfLayerIndex,
-    font: &printpdf::IndirectFontRef,
+// ── Helper : construit une page PDF à partir de lignes de texte ───────────────
+/// Page A4-like remplie de `lines` en Courier, coin haut-gauche à `margin`.
+pub(crate) fn text_page(
     lines: &[String],
-) {
-    let layer = doc.get_page(page_idx).get_layer(layer_idx);
-    layer.begin_text_section();
-    layer.set_font(font, FONT_SIZE);
-    layer.set_text_cursor(Mm(MARGIN), Mm(PAGE_H - MARGIN));
-    layer.set_line_height(LINE_H_MM * 2.835); // mm → pt
+    page_w: f32,
+    page_h: f32,
+    margin: f32,
+    font_pt: f32,
+    line_mm: f32,
+) -> PdfPage {
+    let font = PdfFontHandle::Builtin(BuiltinFont::Courier);
+    let mut ops = vec![
+        Op::StartTextSection,
+        Op::SetFont { font, size: Pt(font_pt) },
+        Op::SetLineHeight { lh: Pt(line_mm * MM_TO_PT) },
+        Op::SetTextCursor {
+            pos: Point { x: Mm(margin).into(), y: Mm(page_h - margin).into() },
+        },
+    ];
     for line in lines {
-        layer.write_text(line.as_str(), font);
-        layer.add_line_break();
+        ops.push(Op::ShowText { items: vec![TextItem::Text(line.clone())] });
+        ops.push(Op::AddLineBreak);
     }
-    layer.end_text_section();
+    ops.push(Op::EndTextSection);
+    PdfPage::new(Mm(page_w), Mm(page_h), ops)
+}
+
+/// Écrit `doc` sur disque (printpdf 0.12 sérialise en mémoire puis on stream).
+pub(crate) fn save_pdf(doc: &PdfDocument, output_path: &str) -> Result<()> {
+    let file = File::create(output_path).map_err(|e| anyhow!("Création '{}': {}", output_path, e))?;
+    let mut w = BufWriter::new(file);
+    let mut warnings = Vec::new();
+    doc.save_writer(&mut w, &PdfSaveOptions::default(), &mut warnings);
+    std::io::Write::flush(&mut w).map_err(|e| anyhow!("Sauvegarde PDF: {}", e))?;
+    Ok(())
 }
 
 // ── TXT → PDF ─────────────────────────────────────────────────────────────────
@@ -79,30 +98,21 @@ pub fn txt_to_pdf(input_path: &str, output_path: &str) -> Result<()> {
 pub fn create_pdf_from_text(text: &str, output_path: &str) -> Result<()> {
     let all_lines = wrap_lines(text);
     let lpp = lines_per_page();
-
-    let (doc, p0, l0) = PdfDocument::new("UniversalConverter", Mm(PAGE_W), Mm(PAGE_H), "Layer 1");
-    let font = doc
-        .add_builtin_font(BuiltinFont::Courier)
-        .map_err(|e| anyhow!("Font: {}", e))?;
-
     let chunks: Vec<&[String]> = all_lines.chunks(lpp).collect();
 
-    if chunks.is_empty() {
-        // Fichier vide → page blanche
-        let _ = doc.get_page(p0).get_layer(l0);
+    // Fichier vide → une page blanche.
+    let pages: Vec<_> = if chunks.is_empty() {
+        vec![text_page(&[], PAGE_W, PAGE_H, MARGIN, FONT_SIZE, LINE_H_MM)]
     } else {
-        write_lines_to_layer(&doc, p0, l0, &font, chunks[0]);
-        for chunk in &chunks[1..] {
-            let (p, l) = doc.add_page(Mm(PAGE_W), Mm(PAGE_H), "Layer 1");
-            write_lines_to_layer(&doc, p, l, &font, chunk);
-        }
-    }
+        chunks
+            .iter()
+            .map(|c| text_page(c, PAGE_W, PAGE_H, MARGIN, FONT_SIZE, LINE_H_MM))
+            .collect()
+    };
 
-    let file = File::create(output_path).map_err(|e| anyhow!("Création '{}': {}", output_path, e))?;
-    doc.save(&mut BufWriter::new(file))
-        .map_err(|e| anyhow!("Sauvegarde PDF: {}", e))?;
-
-    Ok(())
+    let mut doc = PdfDocument::new("UniversalConverter");
+    doc.with_pages(pages);
+    save_pdf(&doc, output_path)
 }
 
 // ── Markdown → HTML ────────────────────────────────────────────────────────────
