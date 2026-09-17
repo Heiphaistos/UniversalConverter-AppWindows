@@ -7,6 +7,9 @@ mod doc_engine;
 mod office_engine;
 mod pdf_engine;
 mod text_engine;
+mod watermark_engine;
+mod watermark_media;
+mod watermark_docs;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,6 +28,15 @@ pub fn run() {
             commands::merge_pdfs_command,
             commands::merge_pdfs_mode_command,
             commands::zip_files_command,
+            commands::watermark_preview,
+            commands::apply_watermark,
+            commands::read_watermark_asset,
+            commands::watermark_subtitles_command,
+            commands::watermark_doc_size,
+            commands::watermark_text_command,
+            commands::watermark_audio_command,
+            commands::watermark_archive_extract,
+            commands::watermark_archive_pack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

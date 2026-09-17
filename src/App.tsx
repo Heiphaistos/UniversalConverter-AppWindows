@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FileUploader } from "./components/FileUploader";
@@ -6,6 +6,9 @@ import { FileList } from "./components/FileList";
 import { History } from "./components/History";
 import { MergePDF } from "./components/MergePDF";
 import { MergePromptModal } from "./components/MergePromptModal";
+// Studio chargé à la demande : pdf.js ne pèse pas sur le démarrage.
+const WatermarkStudio = lazy(() =>
+  import("./watermark/WatermarkStudio").then((m) => ({ default: m.WatermarkStudio })));
 import {
   FileItem, ConversionResult, HistoryItem,
 } from "./types";
@@ -26,6 +29,7 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>(loadHistory);
   const [showHistory, setShowHistory] = useState(false);
   const [showMergePDF, setShowMergePDF] = useState(false);
+  const [showWatermark, setShowWatermark] = useState(false);
   const [mergePromptIds, setMergePromptIds] = useState<string[] | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -177,7 +181,7 @@ export default function App() {
             </svg>
           </div>
           <h1 className="text-base font-bold">Universal Converter</h1>
-          <span className="text-xs text-slate-500 bg-slate-800 rounded px-2 py-0.5">v1.6.0</span>
+          <span className="text-xs text-slate-500 bg-slate-800 rounded px-2 py-0.5">v1.12.0</span>
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -197,6 +201,12 @@ export default function App() {
               ✕
             </button>
           )}
+
+          {/* Filigrane */}
+          <button onClick={() => setShowWatermark(true)}
+            className="text-xs text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition-colors border border-slate-700">
+            Filigrane
+          </button>
 
           {/* Fusionner PDFs */}
           <button onClick={() => setShowMergePDF(true)}
@@ -261,6 +271,7 @@ export default function App() {
             <p>XLSX · XLS · ODS → <strong className="text-slate-400">CSV · JSON · TXT · PDF</strong></p>
             <p>CSV → <strong className="text-slate-400">JSON · XLSX · TXT · PDF</strong></p>
             <p>JSON → <strong className="text-slate-400">CSV · TXT</strong></p>
+            <p>Filigrane → <strong className="text-slate-400">images · PDF · tout document convertible en PDF</strong></p>
           </div>
         )}
       </main>
@@ -275,6 +286,20 @@ export default function App() {
       )}
       {showMergePDF && (
         <MergePDF outputDir={outputDir} onClose={() => setShowMergePDF(false)} />
+      )}
+      {showWatermark && (
+        <Suspense fallback={null}>
+        <WatermarkStudio
+          initialPaths={files.map((f) => f.path)}
+          outputDir={outputDir}
+          onClose={() => setShowWatermark(false)}
+          onResults={(items) => setHistory((prev) => {
+            const next = [...items, ...prev].slice(0, MAX_HISTORY);
+            saveHistory(next);
+            return next;
+          })}
+        />
+        </Suspense>
       )}
       {mergePromptIds && (
         <MergePromptModal

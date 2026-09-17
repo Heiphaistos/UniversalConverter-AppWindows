@@ -1,6 +1,6 @@
 # UniversalConverter
 
-![Version](https://img.shields.io/badge/version-1.11.0-blue)
+![Version](https://img.shields.io/badge/version-1.12.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Stack](https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20React%20%2B%20Rust-orange)
 ![License](https://img.shields.io/badge/license-Propriétaire-red)
@@ -30,6 +30,27 @@ Convertissez images, documents, tableurs, PDF et données structurées sans jama
 - **Fusion** — combine plusieurs PDFs en un seul (mode pages réelles ou mode condensé)
 - **Découpe** — extrait des pages spécifiques (ex : `1,3,5-8`)
 - **Images → PDF** — assemble plusieurs images en un PDF
+
+### Studio filigrane
+- **Tous les formats, format d'origine conservé** — une photo PNG reste un PNG, un DOCX reste un DOCX
+- **Placement à la main en temps réel** — glisser pour déplacer, poignées pour la taille et la rotation, molette, flèches, aimant au centre, 9 ancrages
+- **Texte ou logo** — police installée ou importée (.ttf/.otf/.woff), gras, italique, espacement, interligne, alignement
+- **Couleur** — unie, dégradé linéaire (angle libre) ou radial avec autant d'arrêts que voulu, opacité par couleur, contour, ombre portée
+- **Mosaïque** — répétition sur toute la surface, écarts et quinconce réglables ; miroir horizontal/vertical
+- **Préréglages** — intégrés et personnels, annuler/rétablir (Ctrl+Z / Ctrl+Y)
+- **Traitement par lot** — pages PDF au choix, pages de formats différents gérées (portrait, paysage, `/Rotate`)
+
+| Famille | Ce qui est fait |
+|---|---|
+| Images (PNG, JPG, WebP, BMP, GIF, TIFF, TGA, ICO, QOI, AVIF, EXR, PPM, Farbfeld…) | calque incrusté en pleine résolution, même format (HDR/DDS : PNG, faute d'encodeur) |
+| SVG, HTML | calque intégré au fichier |
+| PDF | calque posé sur les pages choisies |
+| DOCX, PPTX, XLSX, ODT, ODS, ODP, EPUB | image intégrée : en-tête Word, chaque diapositive, fond de feuille (écran), fond de page, fond des chapitres |
+| TXT, MD, YAML, TOML, XML, RTF | texte du filigrane inscrit dans la syntaxe du format |
+| SRT, VTT | sous-titre permanent placé selon la position choisie |
+| MP3, WAV, FLAC, OGG, M4A, AAC | tatouage sonore : son choisi mixé à intervalle réglable, sortie WAV/FLAC |
+| ZIP, TAR, TGZ, GZ, 7Z | chaque fichier interne traité dans son format, archive reconstruite (7Z → ZIP) |
+| CSV, JSON, DOC, PPT, XLS | aucun filigrane possible sans altérer les données : PDF uniquement sur option |
 
 ### Traitement d'images
 - **Qualité** — slider de compression JPEG (1–100 %)

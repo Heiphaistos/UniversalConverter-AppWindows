@@ -122,6 +122,7 @@ impl Drop for TempFile {
 // ── Résultat de conversion ─────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConversionResult {
     pub path: String,
     pub output_size: u64,
@@ -690,5 +691,268 @@ fn zip_files(paths: &[String], output_path: &str) -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("ZIP write: {}", e))?;
     }
     zip.finish().map_err(|e| anyhow::anyhow!("ZIP finish: {}", e))?;
+    Ok(())
+}
+
+// ── Filigrane ─────────────────────────────────────────────────────────────────
+
+/// Côté le plus long de l'aperçu envoyé au studio (la sortie reste pleine résolution).
+const WATERMARK_PREVIEW_SIDE: u32 = 1600;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkPreview {
+    pub data_url: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub async fn watermark_preview(input_path: String) -> Result<WatermarkPreview, String> {
+    check_input_size(&input_path)?;
+    let p = crate::watermark_engine::load_preview(&input_path, WATERMARK_PREVIEW_SIDE)
+        .map_err(|e| e.to_string())?;
+    Ok(WatermarkPreview { data_url: p.data_url, width: p.width, height: p.height })
+}
+
+#[derive(serde::Deserialize)]
+pub struct WatermarkLayer {
+    pub overlay: String,
+    pub pages: Vec<u32>,
+}
+
+/// Applique les calques (PNG base64 rendus par le studio) sur une image ou un PDF.
+/// PDF : un calque par format de page, `pages` 1-based (vide = toutes).
+/// Image : seul le premier calque est utilisé.
+#[tauri::command]
+pub async fn apply_watermark(
+    input_path: String,
+    layers: Vec<WatermarkLayer>,
+    output_format: String,
+    output_dir: Option<String>,
+    output_name: Option<String>,
+    quality: Option<u8>,
+) -> Result<ConversionResult, String> {
+    if layers.is_empty() {
+        return Err("Aucun calque de filigrane fourni".to_string());
+    }
+    let fmt = output_format.to_lowercase();
+    let out = watermark_output_path(&input_path, &fmt, output_dir, output_name)?;
+
+    if DOC_VISUAL.contains(&fmt.as_str()) {
+        if ext_of(&input_path) != fmt {
+            return Err(format!("Un document .{} garde son format : sortie .{} refusée", ext_of(&input_path), fmt));
+        }
+        crate::watermark_engine::overlay_png_bytes(&layers[0].overlay)
+            .and_then(|png| crate::watermark_docs::apply_visual(&input_path, &fmt, &png, &out))
+    } else if fmt == "pdf" {
+        let layers: Vec<_> = layers
+            .into_iter()
+            .map(|l| crate::watermark_engine::Layer { overlay: l.overlay, pages: l.pages })
+            .collect();
+        crate::watermark_engine::apply_to_pdf(&input_path, &layers, &out)
+    } else {
+        let format = OutputFormat::from_str(&fmt).map_err(|e| e.to_string())?;
+        let opts = ImageOptions { quality, ..Default::default() };
+        crate::watermark_engine::apply_to_image(&input_path, &layers[0].overlay, &out, &format, &opts)
+    }
+    .map_err(|e| e.to_string())?;
+
+    Ok(done(out))
+}
+
+/// Octets bruts d'un PDF (aperçu pdf.js) ou d'une police (studio filigrane).
+/// Liste blanche d'extensions : ce n'est pas une lecture de fichier générique.
+#[tauri::command]
+pub async fn read_watermark_asset(path: String) -> Result<tauri::ipc::Response, String> {
+    let ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !["pdf", "ttf", "otf", "woff", "woff2"].contains(&ext.as_str()) {
+        return Err(format!("Type de fichier refusé : .{ext}"));
+    }
+    check_input_size(&path)?;
+    std::fs::read(&path)
+        .map(tauri::ipc::Response::new)
+        .map_err(|e| format!("Lecture '{}': {}", path, e))
+}
+
+/// Chemin de sortie d'un filigrane : `<nom>_filigrane.<fmt>` à côté de la source
+/// (ou dans `output_dir`), après validation du nom et de la taille d'entrée.
+fn watermark_output_path(
+    input_path: &str,
+    fmt: &str,
+    output_dir: Option<String>,
+    output_name: Option<String>,
+) -> Result<String, String> {
+    if let Some(ref dir) = output_dir {
+        validate_output_dir(dir)?;
+    }
+    if let Some(ref name) = output_name {
+        if name.contains('\0') || name.contains('/') || name.contains('\\') || name.contains("..") {
+            return Err("Nom de sortie invalide : caractères interdits détectés".to_string());
+        }
+    }
+    check_input_size(input_path)?;
+    let default_name = format!(
+        "{}_filigrane",
+        std::path::Path::new(input_path).file_stem().unwrap_or_default().to_string_lossy()
+    );
+    let name = output_name.filter(|n| !n.trim().is_empty()).unwrap_or(default_name);
+    let out = build_output_path_custom(input_path, fmt, output_dir.as_deref(), Some(&name));
+    validate_output_path(&out)?;
+    Ok(out)
+}
+
+fn done(out: String) -> ConversionResult {
+    let output_size = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
+    ConversionResult { path: out, output_size }
+}
+
+fn ext_of(path: &str) -> String {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase()
+}
+
+/// Documents qui gardent leur format en recevant le calque image.
+const DOC_VISUAL: &[&str] = &["docx", "pptx", "xlsx", "odt", "ods", "odp", "epub", "html", "htm", "svg"];
+
+#[derive(serde::Serialize)]
+pub struct PageSizePt {
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Taille de page d'un document (points), pour rendre le calque au bon ratio.
+#[tauri::command]
+pub async fn watermark_doc_size(input_path: String) -> Result<PageSizePt, String> {
+    check_input_size(&input_path)?;
+    let (width, height) = crate::watermark_docs::page_size(&input_path, &ext_of(&input_path))
+        .map_err(|e| e.to_string())?;
+    Ok(PageSizePt { width, height })
+}
+
+/// Formats texte : le texte du filigrane inscrit dans la syntaxe du format.
+#[tauri::command]
+pub async fn watermark_text_command(
+    input_path: String,
+    text: String,
+    output_dir: Option<String>,
+    output_name: Option<String>,
+) -> Result<ConversionResult, String> {
+    let ext = ext_of(&input_path);
+    let out = watermark_output_path(&input_path, &ext, output_dir, output_name)?;
+    crate::watermark_docs::apply_textual(&input_path, &ext, &text, &out).map_err(|e| e.to_string())?;
+    Ok(done(out))
+}
+
+/// Sous-titres : cue permanent portant le texte du filigrane, même format en sortie.
+#[tauri::command]
+pub async fn watermark_subtitles_command(
+    input_path: String,
+    text: String,
+    x: f32,
+    y: f32,
+    output_dir: Option<String>,
+    output_name: Option<String>,
+) -> Result<ConversionResult, String> {
+    let ext = ext_of(&input_path);
+    let out = watermark_output_path(&input_path, &ext, output_dir, output_name)?;
+    let src = std::fs::read(&input_path).map_err(|e| format!("Lecture '{}': {}", input_path, e))?;
+    let marked = crate::watermark_media::watermark_subtitles(&String::from_utf8_lossy(&src), &ext, &text, x, y)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&out, marked).map_err(|e| format!("Écriture '{}': {}", out, e))?;
+    Ok(done(out))
+}
+
+/// Audio : tatouage sonore (son choisi mixé à intervalle régulier), sortie WAV/FLAC.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn watermark_audio_command(
+    input_path: String,
+    sound_path: String,
+    interval_s: f32,
+    offset_s: f32,
+    volume: f32,
+    output_format: String,
+    output_dir: Option<String>,
+    output_name: Option<String>,
+) -> Result<ConversionResult, String> {
+    check_input_size(&sound_path)?;
+    let fmt = output_format.to_lowercase();
+    let out = watermark_output_path(&input_path, &fmt, output_dir, output_name)?;
+    let mark = crate::watermark_media::AudioMark { interval_s, offset_s, volume };
+    let in_ext = ext_of(&input_path);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::watermark_media::watermark_audio(&input_path, &in_ext, &sound_path, &mark, &out, &fmt)
+            .map(|_| out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(done)
+    .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct ArchiveEntry {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct PackEntry {
+    pub name: String,
+    pub path: String,
+}
+
+/// Archives : extraction dans un dossier temporaire neuf pour filigraner le contenu.
+#[tauri::command]
+pub async fn watermark_archive_extract(input_path: String) -> Result<Vec<ArchiveEntry>, String> {
+    check_input_size(&input_path)?;
+    let ext = ext_of(&input_path);
+    let dir = unique_tmp("wmdir");
+    let entries = crate::archive_engine::extract_to_dir(&input_path, &ext, &dir).map_err(|e| e.to_string())?;
+    Ok(entries.into_iter().map(|(name, path)| ArchiveEntry { name, path }).collect())
+}
+
+/// Archives : réemballage du contenu filigrané (zip / tar / tgz).
+#[tauri::command]
+pub async fn watermark_archive_pack(
+    input_path: String,
+    entries: Vec<PackEntry>,
+    output_format: String,
+    output_dir: Option<String>,
+    output_name: Option<String>,
+) -> Result<ConversionResult, String> {
+    let fmt = output_format.to_lowercase();
+    let out = watermark_output_path(&input_path, &fmt, output_dir, output_name)?;
+    let tmp = std::env::temp_dir();
+    // Seuls les fichiers extraits ou produits dans le dossier temporaire sont emballés.
+    for e in &entries {
+        let ok = std::path::Path::new(&e.path)
+            .canonicalize()
+            .map(|p| p.starts_with(tmp.canonicalize().unwrap_or_else(|_| tmp.clone())))
+            .unwrap_or(false);
+        if !ok {
+            return Err(format!("Entrée hors du dossier de travail refusée : {}", e.path));
+        }
+    }
+    let files: Vec<(String, String)> = entries.into_iter().map(|e| (e.name, e.path)).collect();
+    crate::archive_engine::pack_files(&files, &out, &fmt).map_err(|e| e.to_string())?;
+    Ok(done(out))
+}
+
+fn check_input_size(path: &str) -> Result<(), String> {
+    let size = std::fs::metadata(path)
+        .map(|m| m.len())
+        .map_err(|e| format!("Fichier introuvable '{}': {}", path, e))?;
+    if size > MAX_FILE_SIZE {
+        return Err(format!("Fichier trop volumineux ({:.1} MB)", size as f64 / (1024.0 * 1024.0)));
+    }
     Ok(())
 }

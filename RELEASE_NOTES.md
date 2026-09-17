@@ -2,6 +2,21 @@
 
 ---
 
+## v1.12.0 — 2026-09-17
+
+### Nouveautés
+- **Studio filigrane** — filigrane personnalisable sur tous les formats pris en charge, en conservant le format d'origine
+- **Aperçu temps réel et placement à la souris** — déplacement, taille, rotation, aimant, ancrages, flèches du clavier
+- **Personnalisation complète** — texte ou logo, polices installées ou importées, couleur unie, dégradé linéaire ou radial, contour, ombre, opacité, mosaïque, miroir
+- **Préréglages et historique** — préréglages intégrés/personnels, annuler/rétablir
+- **Documents** — DOCX, PPTX, XLSX, ODT, ODS, ODP, EPUB, HTML, SVG reçoivent le filigrane dans leur propre format
+- **Texte, sous-titres, audio, archives** — texte inscrit, sous-titre permanent, tatouage sonore, contenu d'archive traité fichier par fichier
+
+### Corrections
+- Le résultat de conversion exposait `output_size` au lieu de `outputSize` : la taille des fichiers convertis était absente de l'historique
+
+---
+
 ## v1.7.0 — 2026-05-19
 
 ### Nouveautés

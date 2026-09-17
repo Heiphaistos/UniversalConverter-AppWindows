@@ -214,3 +214,78 @@ pub fn convert_archive(input_path: &str, in_ext: &str, output_path: &str, fmt: &
         _ => Err(anyhow!("Format d'archive de sortie non supporté: {}", fmt)),
     }
 }
+
+// ─── Filigrane : extraction / réemballage ─────────────────────────────────────
+
+/// Extrait l'archive dans `dir` et renvoie `(nom d'entrée, chemin extrait)`.
+/// Les noms sont déjà assainis à la lecture (zip-slip), les plafonds anti-bombe
+/// s'appliquent comme pour une conversion.
+pub fn extract_to_dir(input_path: &str, in_ext: &str, dir: &str) -> Result<Vec<(String, String)>> {
+    let entries = read_archive(input_path, in_ext)?;
+    if entries.is_empty() {
+        return Err(anyhow!("Archive vide ou entrées toutes invalides"));
+    }
+    let root = std::path::Path::new(dir);
+    let mut out = Vec::with_capacity(entries.len());
+    for e in entries {
+        let path = root.join(&e.name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| anyhow!("Création dossier '{}': {}", parent.display(), err))?;
+        }
+        std::fs::write(&path, &e.data)
+            .map_err(|err| anyhow!("Extraction '{}': {}", e.name, err))?;
+        out.push((e.name, path.to_string_lossy().to_string()));
+    }
+    Ok(out)
+}
+
+/// Réemballe des fichiers sous les noms d'entrée donnés (`zip`, `tar`, `tgz`).
+pub fn pack_files(files: &[(String, String)], output_path: &str, fmt: &str) -> Result<()> {
+    let mut entries = Vec::with_capacity(files.len());
+    for (name, path) in files {
+        let name = sanitize_entry_name(name)
+            .ok_or_else(|| anyhow!("Nom d'entrée invalide : {}", name))?;
+        let data = std::fs::read(path).map_err(|e| anyhow!("Lecture '{}': {}", path, e))?;
+        entries.push(Entry { name, data });
+    }
+    match fmt {
+        "zip" => write_zip(&entries, output_path),
+        "tar" => write_tar(&entries, output_path),
+        "tgz" => write_tgz(&entries, output_path),
+        _ => Err(anyhow!("Format d'archive de sortie non supporté: {}", fmt)),
+    }
+}
+
+#[cfg(test)]
+mod watermark_tests {
+    /// Extraction puis réemballage : contenu et arborescence conservés.
+    #[test]
+    fn extraction_puis_reemballage() {
+        let dir = std::env::temp_dir().join(format!("uc_arch_{}", std::process::id()));
+        let src = dir.join("src.zip");
+        std::fs::create_dir_all(&dir).unwrap();
+        super::write_zip(
+            &[
+                super::Entry { name: "a.txt".into(), data: b"alpha".to_vec() },
+                super::Entry { name: "sous/b.bin".into(), data: vec![1, 2, 3] },
+            ],
+            src.to_str().unwrap(),
+        )
+        .unwrap();
+
+        let out_dir = dir.join("x");
+        let files = super::extract_to_dir(src.to_str().unwrap(), "zip", out_dir.to_str().unwrap()).unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(std::fs::read(&files[1].1).unwrap(), vec![1, 2, 3]);
+
+        let packed = dir.join("out.tgz");
+        super::pack_files(&files, packed.to_str().unwrap(), "tgz").unwrap();
+        let back = super::read_archive(packed.to_str().unwrap(), "tgz").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[0].name, "a.txt");
+        assert_eq!(back[1].name, "sous/b.bin");
+        assert_eq!(back[0].data, b"alpha");
+    }
+}

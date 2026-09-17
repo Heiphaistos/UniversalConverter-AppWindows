@@ -194,7 +194,7 @@ pub fn convert_image_file(
 }
 
 /// Sauvegarde avec adaptation du type de pixels aux exigences de l'encodeur.
-fn save_image(
+pub(crate) fn save_image(
     img: &image::DynamicImage,
     output_path: &str,
     format: &OutputFormat,
