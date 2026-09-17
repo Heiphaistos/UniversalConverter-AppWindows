@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title UniversalConverter v1.12.1 - Build Release
+title UniversalConverter v1.13.0 - Build Release
 cd /d "%~dp0"
 
 :: ── Dossier logs ─────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ if exist ".logs\build.log" (
 
 echo.
 echo  ================================================
-echo   UniversalConverter v1.12.1  ^|  Build Release
+echo   UniversalConverter v1.13.0  ^|  Build Release
 echo  ================================================
 echo   Logs : .logs\build.log
 echo  ================================================

@@ -3,9 +3,24 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  WatermarkConfig, FillMode, TextAlign, Preset, BUILTIN_PRESETS, COMMON_FONTS, rgba,
+  WatermarkConfig, FillMode, TextAlign, BlendMode, Preset, BUILTIN_PRESETS, COMMON_FONTS, rgba,
 } from "./config";
 import { Section, Slider, ColorAlpha, Toggle, Segmented, btn } from "./controls";
+
+const BLEND_MODES: { value: BlendMode; label: string }[] = [
+  { value: "normal", label: "Normal (transparence)" },
+  { value: "multiply", label: "Produit" },
+  { value: "screen", label: "Superposition claire" },
+  { value: "overlay", label: "Incrustation" },
+  { value: "hard-light", label: "Lumière crue" },
+  { value: "soft-light", label: "Lumière tamisée" },
+  { value: "color-burn", label: "Densité couleur +" },
+  { value: "color-dodge", label: "Densité couleur −" },
+  { value: "darken", label: "Obscurcir" },
+  { value: "lighten", label: "Éclaircir" },
+  { value: "difference", label: "Différence (inversion)" },
+  { value: "exclusion", label: "Exclusion" },
+];
 
 interface Props {
   cfg: WatermarkConfig;
@@ -15,6 +30,9 @@ interface Props {
   onCommit: () => void;
   onAnchor: (ax: number, ay: number) => void;
   onImportFont: (path: string) => void;
+  onPlaceOnBusiest: () => void;
+  onReadSignature: () => void;
+  blendSupported: boolean;
   onSavePreset: (name: string) => void;
   onDeletePreset: (name: string) => void;
   onLoadPreset: (p: Preset) => void;
@@ -27,6 +45,7 @@ const IMAGE_FILTER = [{
 
 export function WatermarkPanel({
   cfg, fonts, userPresets, onChange, onCommit, onAnchor, onImportFont,
+  onPlaceOnBusiest, onReadSignature, blendSupported,
   onSavePreset, onDeletePreset, onLoadPreset,
 }: Props) {
   const [presetName, setPresetName] = useState("");
@@ -234,6 +253,77 @@ export function WatermarkPanel({
           onChange={(v) => set({ x: v / 100 })} onCommit={onCommit} />
         <Slider label="Position Y" value={Math.round(cfg.y * 1000) / 10} min={-20} max={120} step={0.1} unit="%"
           onChange={(v) => set({ y: v / 100 })} onCommit={onCommit} />
+      </Section>
+
+      {/* ── Résistance à l'effacement ───────────────────────────── */}
+      <Section title="Résistance à l'effacement" defaultOpen={false}>
+        <p className="text-[10px] text-slate-500 leading-relaxed">
+          Aucun filigrane visible n'est indélébile face aux retouches automatiques. Ces réglages
+          rendent la restauration coûteuse et salissante, et la signature invisible prouve l'origine
+          même si la marque visible est effacée.
+        </p>
+
+        <button className={`${btn} w-full`} onClick={onPlaceOnBusiest}
+          title="Le filigrane devient bien plus dur à effacer sur une zone riche en détails que sur un fond uni">
+          Placer sur la zone la plus détaillée
+        </button>
+
+        <label className="block text-[11px] text-slate-400">
+          Mode de fusion
+          <select value={cfg.blend} onChange={(e) => set({ blend: e.target.value as BlendMode }, true)}
+            className="w-full mt-0.5 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200">
+            {BLEND_MODES.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
+          </select>
+        </label>
+        {!blendSupported && cfg.blend !== "normal" && (
+          <p className="text-[10px] text-amber-300">
+            Ce format intègre le filigrane comme une image posée : le mode de fusion ne s'y applique pas
+            (il reste actif pour les images, PDF, SVG et HTML).
+          </p>
+        )}
+        {blendSupported && cfg.blend !== "normal" && (
+          <p className="text-[10px] text-slate-500">
+            Les pixels d'origine sont altérés, pas seulement recouverts : les redessiner devient un vrai travail de reconstruction.
+          </p>
+        )}
+
+        <Slider label="Bruit dans la marque" value={cfg.noise} min={0} max={100} unit="%"
+          onChange={(v) => set({ noise: v })} onCommit={onCommit} />
+
+        <div className="pt-1 border-t border-slate-800">
+          <Toggle label="Mosaïque irrégulière" checked={cfg.tile && (cfg.tileJitterSize > 0 || cfg.tileJitterAngle > 0)}
+            onChange={(v) => set(v
+              ? { tile: true, tileJitterSize: 45, tileJitterAngle: 35, tileJitterPos: 30 }
+              : { tileJitterSize: 0, tileJitterAngle: 0, tileJitterPos: 0 }, true)} />
+          <p className="text-[10px] text-slate-500 mb-1">
+            Tailles et angles différents d'une répétition à l'autre : chaque zone à reconstituer devient un cas particulier.
+          </p>
+          {cfg.tile && (
+            <>
+              <Slider label="Variation de taille" value={cfg.tileJitterSize} min={0} max={80} unit="%"
+                onChange={(v) => set({ tileJitterSize: v })} onCommit={onCommit} />
+              <Slider label="Variation d'angle" value={cfg.tileJitterAngle} min={0} max={90} unit="°"
+                onChange={(v) => set({ tileJitterAngle: v })} onCommit={onCommit} />
+              <Slider label="Décalage aléatoire" value={cfg.tileJitterPos} min={0} max={60} unit="%"
+                onChange={(v) => set({ tileJitterPos: v })} onCommit={onCommit} />
+            </>
+          )}
+        </div>
+
+        <div className="pt-1 border-t border-slate-800 space-y-1">
+          <label className="block text-[11px] text-slate-400">
+            Signature invisible (images)
+            <input value={cfg.signature} onChange={(e) => set({ signature: e.target.value })} onBlur={onCommit}
+              placeholder="© Votre nom — 2026"
+              className="w-full mt-0.5 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200" />
+          </label>
+          <p className="text-[10px] text-slate-500">
+            Inscrite dans les fréquences de l'image, invisible à l'œil. Elle survit au réencodage JPEG et
+            à un repeint partiel, et se relit avec « Vérifier une signature ». Les autres formats
+            (PDF, documents, audio) ne la reçoivent pas.
+          </p>
+          <button className={`${btn} w-full`} onClick={onReadSignature}>Vérifier une signature…</button>
+        </div>
       </Section>
 
       {/* ── Mosaïque ────────────────────────────────────────────── */}

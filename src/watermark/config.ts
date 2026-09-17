@@ -4,6 +4,10 @@
 // pages de formats différents.
 
 export type FillMode = "solid" | "linear" | "radial" | "none";
+/** Modes séparables du standard W3C : identiques dans le canvas, dans PDF et dans le moteur Rust. */
+export type BlendMode =
+  | "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten"
+  | "color-dodge" | "color-burn" | "hard-light" | "soft-light" | "difference" | "exclusion";
 export type TextAlign = "left" | "center" | "right";
 
 export interface ColorStop {
@@ -58,11 +62,19 @@ export interface WatermarkConfig {
   flipH: boolean;
   flipV: boolean;
 
+  // Résistance à l'effacement
+  blend: BlendMode;      // altère les pixels d'origine au lieu de les recouvrir
+  noise: number;         // % de bruit ajouté dans la marque (gêne le remplissage automatique)
+  signature: string;     // signature invisible inscrite dans l'image (images uniquement)
+
   // Mosaïque
   tile: boolean;
   tileGapX: number;        // % du plus petit côté
   tileGapY: number;
   tileStagger: boolean;
+  tileJitterSize: number;   // % de variation de taille d'une tuile à l'autre
+  tileJitterAngle: number;  // degrés de variation d'angle
+  tileJitterPos: number;    // % de décalage aléatoire
 
   // Audio (tatouage sonore)
   audioSound: string | null; // son mixé dans la piste
@@ -113,10 +125,17 @@ export const DEFAULT_CONFIG: WatermarkConfig = {
   flipH: false,
   flipV: false,
 
+  blend: "normal",
+  noise: 0,
+  signature: "",
+
   tile: false,
   tileGapX: 12,
   tileGapY: 14,
   tileStagger: true,
+  tileJitterSize: 0,
+  tileJitterAngle: 0,
+  tileJitterPos: 0,
 
   audioSound: null,
   audioInterval: 30,
@@ -146,6 +165,15 @@ export const BUILTIN_PRESETS: Preset[] = [
     config: {
       ...DEFAULT_CONFIG, text: "ÉCHANTILLON", size: 5, opacity: 0.3, tile: true,
       fillMode: "linear",
+    },
+  },
+  {
+    name: "Anti-effacement (mosaïque irrégulière)", builtin: true,
+    config: {
+      ...DEFAULT_CONFIG, text: "© Momo", size: 9, opacity: 0.6, rotation: -20,
+      tile: true, tileGapX: 2, tileGapY: 4, tileStagger: true,
+      tileJitterSize: 45, tileJitterAngle: 35, tileJitterPos: 30,
+      blend: "overlay", noise: 25, strokeWidth: 3, strokeColor: "#000000", strokeAlpha: 0.6,
     },
   },
   {

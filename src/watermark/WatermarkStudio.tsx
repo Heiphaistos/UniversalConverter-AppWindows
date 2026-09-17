@@ -2,10 +2,11 @@
 // par lot à tous les formats d'UniversalConverter, format d'origine conservé.
 
 import { useCallback, useEffect, useRef, useState, PointerEvent as ReactPointerEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { WatermarkConfig, Preset, loadLastConfig, saveLastConfig, loadUserPresets, saveUserPresets, DEFAULT_CONFIG } from "./config";
-import { drawWatermark, Box } from "./render";
+import { renderLayer, Box } from "./render";
 import {
   StudioFile, Loaded, studioFile, loadSource, renderPdfPage, loadLogo, loadFontFile, familyOf, disposeLoaded, Family,
 } from "./sources";
@@ -69,6 +70,68 @@ function drawTextDocPreview(ctx: CanvasRenderingContext2D, W: number, H: number,
   ctx.fillText(one, W * 0.05, H * 0.08);
   ctx.fillStyle = "rgba(255,255,255,0.35)";
   ["…contenu d'origine inchangé…", "", one].forEach((l, i) => ctx.fillText(l, W * 0.05, H * (0.2 + i * 0.07)));
+}
+
+/**
+ * Zone la plus « chaotique » de l'image : énergie des contours (Sobel) calculée
+ * sur l'aperçu, puis fenêtre de la taille du filigrane qui en contient le plus.
+ * Un filigrane posé là est bien plus coûteux à effacer proprement qu'au milieu
+ * d'un ciel uni, où un simple remplissage suffit.
+ */
+function busiestSpot(canvas: HTMLCanvasElement, boxW: number, boxH: number): { x: number; y: number } | null {
+  const W = canvas.width;
+  const H = canvas.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || W < 8 || H < 8) return null;
+  const d = ctx.getImageData(0, 0, W, H).data;
+
+  // Carte d'énergie en petites cellules : assez fin pour viser, assez rapide pour l'interactif.
+  const cell = Math.max(4, Math.round(Math.min(W, H) / 120));
+  const cw = Math.floor(W / cell);
+  const ch = Math.floor(H / cell);
+  if (cw < 3 || ch < 3) return null;
+  const energy = new Float64Array(cw * ch);
+  const lum = (x: number, y: number) => {
+    const i = (y * W + x) * 4;
+    return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  };
+  for (let cy = 0; cy < ch; cy++) {
+    for (let cx = 0; cx < cw; cx++) {
+      let sum = 0;
+      const x0 = cx * cell;
+      const y0 = cy * cell;
+      for (let y = y0 + 1; y < Math.min(y0 + cell, H - 1); y += 2) {
+        for (let x = x0 + 1; x < Math.min(x0 + cell, W - 1); x += 2) {
+          sum += Math.abs(lum(x + 1, y) - lum(x - 1, y)) + Math.abs(lum(x, y + 1) - lum(x, y - 1));
+        }
+      }
+      energy[cy * cw + cx] = sum;
+    }
+  }
+
+  // Somme d'aire (image intégrale) : fenêtre glissante en temps constant.
+  const sat = new Float64Array((cw + 1) * (ch + 1));
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      sat[(y + 1) * (cw + 1) + x + 1] =
+        energy[y * cw + x] + sat[y * (cw + 1) + x + 1] + sat[(y + 1) * (cw + 1) + x] - sat[y * (cw + 1) + x];
+    }
+  }
+  const winW = Math.max(1, Math.min(cw, Math.round(boxW / cell)));
+  const winH = Math.max(1, Math.min(ch, Math.round(boxH / cell)));
+  let best = -1;
+  let bx = 0;
+  let by = 0;
+  for (let y = 0; y + winH <= ch; y++) {
+    for (let x = 0; x + winW <= cw; x++) {
+      const v =
+        sat[(y + winH) * (cw + 1) + x + winW] - sat[y * (cw + 1) + x + winW] -
+        sat[(y + winH) * (cw + 1) + x] + sat[y * (cw + 1) + x];
+      if (v > best) { best = v; bx = x; by = y; }
+    }
+  }
+  if (best <= 0) return null;
+  return { x: ((bx + winW / 2) * cell) / W, y: ((by + winH / 2) * cell) / H };
 }
 
 function errText(e: unknown): string {
@@ -190,6 +253,10 @@ export function WatermarkStudio({ initialPaths, outputDir, onClose, onResults }:
     };
   }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Un DOCX ou un PPTX ne sait pas fusionner une image avec son contenu :
+   *  le mode de fusion n'y est pas appliqué, et l'aperçu ne doit pas le montrer. */
+  const blendSupported = !active || ["image", "svg", "pdf", "pdfOnly"].includes(familyOf(active.ext)) || ["html", "htm"].includes(active.ext);
+
   /** Ce qui est affiché : le fichier, ou le premier fichier visuel d'une archive. */
   const shown = loaded?.kind === "archive" ? loaded.inner : loaded;
   const shownFamily: Family | null = shown?.kind === "frame" ? shown.family : active ? familyOf(active.ext) : null;
@@ -258,7 +325,14 @@ export function WatermarkStudio({ initialPaths, outputDir, onClose, onResults }:
         else drawTextDocPreview(ctx, W, H, cfg);
         setBox(null);
       } else {
-        setBox(drawWatermark(ctx, W, H, cfg, logo));
+        // Même chaîne qu'à l'export : calque séparé, puis fusion.
+        const { canvas: layer, box: b } = renderLayer(W, H, cfg, logo);
+        // « normal » s'appelle source-over dans le canvas ; les autres noms sont identiques.
+        ctx.globalCompositeOperation =
+          blendSupported && cfg.blend !== "normal" ? (cfg.blend as GlobalCompositeOperation) : "source-over";
+        ctx.drawImage(layer, 0, 0, W, H);
+        ctx.globalCompositeOperation = "source-over";
+        setBox(b);
       }
     });
     return () => cancelAnimationFrame(id);
@@ -358,6 +432,33 @@ export function WatermarkStudio({ initialPaths, outputDir, onClose, onResults }:
     const hh = box ? (box.w * s + box.h * c) / 2 / bg.height : 0.05;
     const place = (a: number, half: number) => (a === 0.5 ? 0.5 : a === 0 ? margin + half : 1 - margin - half);
     change({ x: place(ax, hw), y: place(ay, hh) }, true);
+  }
+
+/** Place le filigrane sur la zone la plus détaillée de l'aperçu. */
+  function placeOnBusiest() {
+    const canvas = canvasRef.current;
+    if (!canvas || !bg || !box) { setNotice("Chargez d'abord un fichier avec une image"); return; }
+    // On mesure le FOND seul, sans le filigrane déjà dessiné par-dessus.
+    const clean = document.createElement("canvas");
+    clean.width = bg.width;
+    clean.height = bg.height;
+    clean.getContext("2d")?.drawImage(bg, 0, 0, bg.width, bg.height);
+    const spot = busiestSpot(clean, box.w, box.h);
+    if (!spot) { setNotice("Zone détaillée introuvable sur cet aperçu"); return; }
+    change({ x: spot.x, y: spot.y }, true);
+    setNotice("Filigrane placé sur la zone la plus détaillée");
+  }
+
+  /** Lit la signature invisible d'une image choisie par l'utilisateur. */
+  async function readSignature() {
+    const p = await open({ multiple: false, filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif"] }] });
+    if (typeof p !== "string") return;
+    try {
+      const found = await invoke<string | null>("watermark_read_signature", { inputPath: p });
+      setNotice(found ? `Signature trouvée : ${found}` : "Aucune signature invisible dans ce fichier");
+    } catch (e) {
+      setNotice(`Lecture impossible : ${errText(e)}`);
+    }
   }
 
   function savePreset(name: string) {
@@ -539,6 +640,7 @@ export function WatermarkStudio({ initialPaths, outputDir, onClose, onResults }:
             onChange={change} onCommit={commit} onAnchor={anchor}
             onImportFont={(path) => change({ fontFile: path }, true)}
             onSavePreset={savePreset} onDeletePreset={deletePreset}
+            onPlaceOnBusiest={placeOnBusiest} onReadSignature={readSignature} blendSupported={blendSupported}
             onLoadPreset={(p) => { change(p.config, true); }} />
         </aside>
       </div>

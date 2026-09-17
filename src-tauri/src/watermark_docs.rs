@@ -214,16 +214,16 @@ pub fn page_size(path: &str, ext: &str) -> Result<(f32, f32)> {
 
 // ── Calque visuel, format conservé ────────────────────────────────────────────
 
-pub fn apply_visual(path: &str, ext: &str, png: &[u8], output: &str) -> Result<()> {
+pub fn apply_visual(path: &str, ext: &str, png: &[u8], blend: &str, output: &str) -> Result<()> {
     match ext {
         "html" | "htm" => {
             let src = String::from_utf8_lossy(&std::fs::read(path)?).into_owned();
-            std::fs::write(output, html_with_overlay(&src, png))?;
+            std::fs::write(output, html_with_overlay(&src, png, blend))?;
             Ok(())
         }
         "svg" => {
             let src = String::from_utf8_lossy(&std::fs::read(path)?).into_owned();
-            std::fs::write(output, svg_with_overlay(&src, png)?)?;
+            std::fs::write(output, svg_with_overlay(&src, png, blend)?)?;
             Ok(())
         }
         "docx" | "pptx" | "xlsx" | "odt" | "ods" | "odp" | "epub" => {
@@ -247,10 +247,11 @@ fn data_url(png: &[u8]) -> String {
     format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png))
 }
 
-fn html_with_overlay(src: &str, png: &[u8]) -> String {
+fn html_with_overlay(src: &str, png: &[u8], blend: &str) -> String {
+    // mix-blend-mode : le calque altère vraiment les pixels de la page, comme dans l'aperçu.
     let img = format!(
-        "<img alt=\"\" aria-hidden=\"true\" data-uc-filigrane src=\"{}\" style=\"position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;pointer-events:none;z-index:2147483647\">",
-        data_url(png)
+        "<img alt=\"\" aria-hidden=\"true\" data-uc-filigrane src=\"{}\" style=\"position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;pointer-events:none;z-index:2147483647;mix-blend-mode:{}\">",
+        data_url(png), blend
     );
     match src.to_lowercase().rfind("</body>") {
         Some(i) => format!("{}{}{}", &src[..i], img, &src[i..]),
@@ -258,7 +259,7 @@ fn html_with_overlay(src: &str, png: &[u8]) -> String {
     }
 }
 
-fn svg_with_overlay(src: &str, png: &[u8]) -> Result<String> {
+fn svg_with_overlay(src: &str, png: &[u8], blend: &str) -> Result<String> {
     let tag = open_tag(src, "<svg").ok_or_else(|| anyhow!("SVG sans élément <svg>"))?;
     let (x, y, w, h) = match attr(tag, "viewBox") {
         Some(vb) => {
@@ -272,8 +273,8 @@ fn svg_with_overlay(src: &str, png: &[u8]) -> Result<String> {
         }
     };
     let image = format!(
-        "<image data-uc-filigrane=\"1\" x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\" href=\"{}\"/>",
-        data_url(png)
+        "<image data-uc-filigrane=\"1\" x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\" style=\"mix-blend-mode:{}\" href=\"{}\"/>",
+        blend, data_url(png)
     );
     let end = src.rfind("</svg>").ok_or_else(|| anyhow!("SVG sans </svg>"))?;
     Ok(format!("{}{}{}", &src[..end], image, &src[end..]))
@@ -658,7 +659,7 @@ mod tests {
         crate::doc_engine::txt_to_docx(&txt, &src).unwrap();
         let size = page_size(&src, "docx").unwrap();
         assert!(size.0 > 100.0 && size.1 > 100.0, "taille {size:?}");
-        apply_visual(&src, "docx", &png(), &out).unwrap();
+        apply_visual(&src, "docx", &png(), "normal", &out).unwrap();
 
         let text = crate::office_engine::docx_to_text(&out).expect("DOCX relisible");
         let pkg = Package::open(&out).unwrap();
@@ -678,7 +679,7 @@ mod tests {
         let (csv, src, out) = (tmp("b.csv"), tmp("b.xlsx"), tmp("b_wm.xlsx"));
         std::fs::write(&csv, "nom,valeur\nalpha,1\nbeta,2\n").unwrap();
         crate::office_engine::csv_to_xlsx(&csv, &src).unwrap();
-        apply_visual(&src, "xlsx", &png(), &out).unwrap();
+        apply_visual(&src, "xlsx", &png(), "normal", &out).unwrap();
         let csv_back = tmp("b_back.csv");
         crate::office_engine::excel_to_csv(&out, &csv_back).expect("XLSX relisible");
         let back = std::fs::read_to_string(&csv_back).unwrap();
@@ -695,7 +696,7 @@ mod tests {
 
         let (e_src, e_out) = (tmp("c.epub"), tmp("c_wm.epub"));
         crate::doc_engine::txt_to_epub(&txt, &e_src).unwrap();
-        apply_visual(&e_src, "epub", &png(), &e_out).unwrap();
+        apply_visual(&e_src, "epub", &png(), "normal", &e_out).unwrap();
         let back = tmp("c_back.txt");
         crate::doc_engine::epub_to_text(&e_out, &back).expect("EPUB relisible");
         assert!(std::fs::read_to_string(&back).unwrap().contains("Chapitre unique"));
@@ -704,7 +705,7 @@ mod tests {
 
         let (o_src, o_out) = (tmp("c.odt"), tmp("c_wm.odt"));
         crate::doc_engine::write_odt("Texte ODT", &o_src).unwrap();
-        apply_visual(&o_src, "odt", &png(), &o_out).unwrap();
+        apply_visual(&o_src, "odt", &png(), "normal", &o_out).unwrap();
         let pkg = Package::open(&o_out).unwrap();
         for f in [&txt, &e_src, &e_out, &back, &o_src, &o_out] { let _ = std::fs::remove_file(f); }
         let styles = pkg.text("styles.xml").unwrap();
@@ -716,10 +717,10 @@ mod tests {
 
     #[test]
     fn svg_et_html_gardent_leur_format() {
-        let svg = svg_with_overlay("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"10 20 300 100\"><rect/></svg>", &png()).unwrap();
-        assert!(svg.contains("x=\"10\" y=\"20\" width=\"300\" height=\"100\""), "{svg}");
+        let svg = svg_with_overlay("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"10 20 300 100\"><rect/></svg>", &png(), "multiply").unwrap();
+        assert!(svg.contains("x=\"10\" y=\"20\" width=\"300\" height=\"100\"") && svg.contains("mix-blend-mode:multiply"), "{svg}");
         assert!(svg.ends_with("</svg>"));
-        let html = html_with_overlay("<html><BODY><p>x</p></BODY></html>", &png());
+        let html = html_with_overlay("<html><BODY><p>x</p></BODY></html>", &png(), "overlay");
         assert!(html.contains("<p>x</p><img") && html.ends_with("</BODY></html>"), "{html}");
     }
 
@@ -759,7 +760,7 @@ mod tests {
             ("ppt/slides/slide1.xml", "<p:sld xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Diapo un</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"),
         ]);
         assert_eq!(page_size(&src, "pptx").unwrap(), (720.0, 405.0));
-        apply_visual(&src, "pptx", &png(), &out).unwrap();
+        apply_visual(&src, "pptx", &png(), "normal", &out).unwrap();
         let text = crate::office_engine::pptx_to_text(&out).expect("PPTX relisible");
         let pkg = Package::open(&out).unwrap();
         let slide = pkg.text("ppt/slides/slide1.xml").unwrap();
@@ -777,7 +778,7 @@ mod tests {
         ]);
         let (w, h) = page_size(&osrc, "odp").unwrap();
         assert!((w - 793.7).abs() < 0.5 && (h - 446.5).abs() < 0.5, "{w}x{h}");
-        apply_visual(&osrc, "odp", &png(), &oout).unwrap();
+        apply_visual(&osrc, "odp", &png(), "normal", &oout).unwrap();
         let text = crate::doc_engine::odf_to_text(&oout).expect("ODP relisible");
         let content = Package::open(&oout).unwrap().text("content.xml").unwrap();
         for f in [&src, &out, &osrc, &oout] { let _ = std::fs::remove_file(f); }

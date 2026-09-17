@@ -9,6 +9,7 @@ mod pdf_engine;
 mod text_engine;
 mod watermark_engine;
 mod watermark_media;
+mod watermark_stego;
 mod watermark_docs;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -31,6 +32,7 @@ pub fn run() {
             commands::watermark_preview,
             commands::apply_watermark,
             commands::read_watermark_asset,
+            commands::watermark_read_signature,
             commands::watermark_subtitles_command,
             commands::watermark_doc_size,
             commands::watermark_text_command,

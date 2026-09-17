@@ -3,6 +3,18 @@
 
 import { WatermarkConfig, rgba } from "./config";
 
+/** Suite pseudo-aléatoire déterministe : l'aperçu et le fichier produit tirent
+ *  exactement les mêmes variations, sinon le rendu final ne serait pas celui montré. */
+function rand(seed: number): () => number {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s ^= s << 13; s >>>= 0;
+    s ^= s >> 17;
+    s ^= s << 5; s >>>= 0;
+    return s / 4294967296;
+  };
+}
+
 /** Bloc du filigrane central, en pixels canvas (taille avant rotation). */
 export interface Box {
   cx: number;
@@ -129,11 +141,20 @@ export function drawWatermark(
     const diag = Math.hypot(W, H);
     const nx = Math.ceil(diag / stepX) + 1;
     const ny = Math.ceil(diag / stepY) + 1;
+    const next = rand(0x9e3779b9);
     for (let j = -ny; j <= ny; j++) {
       const off = cfg.tileStagger && j % 2 !== 0 ? stepX / 2 : 0;
       for (let i = -nx; i <= nx; i++) {
+        // Tailles, angles et décalages irréguliers : chaque tuile devient un
+        // problème différent à reconstituer pour un outil de retouche automatique.
+        const k = 1 + ((next() - 0.5) * 2 * cfg.tileJitterSize) / 100;
+        const a = ((next() - 0.5) * 2 * cfg.tileJitterAngle * Math.PI) / 180;
+        const dx = ((next() - 0.5) * 2 * cfg.tileJitterPos * stepX) / 100;
+        const dy = ((next() - 0.5) * 2 * cfg.tileJitterPos * stepY) / 100;
         ctx.save();
-        ctx.translate(i * stepX + off, j * stepY);
+        ctx.translate(i * stepX + off + dx, j * stepY + dy);
+        if (cfg.tileJitterAngle) ctx.rotate(a);
+        if (cfg.tileJitterSize) ctx.scale(k, k);
         drawBlock();
         ctx.restore();
       }
@@ -141,7 +162,29 @@ export function drawWatermark(
   }
 
   ctx.restore();
+  if (cfg.noise > 0) addNoise(ctx, W, H, cfg.noise);
   return box;
+}
+
+/**
+ * Bruit appliqué UNIQUEMENT là où le filigrane est déjà présent : il casse la
+ * régularité des pixels de la marque, ce qui gêne les algorithmes de lissage et
+ * de remplissage automatique. Hors de la marque, l'image reste intacte.
+ */
+function addNoise(ctx: CanvasRenderingContext2D, W: number, H: number, amount: number) {
+  const img = ctx.getImageData(0, 0, W, H);
+  const d = img.data;
+  const amp = (amount / 100) * 120;
+  const next = rand(0x85ebca6b);
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 0) continue;
+    for (let c = 0; c < 3; c++) {
+      d[i + c] = Math.max(0, Math.min(255, d[i + c] + (next() - 0.5) * 2 * amp));
+    }
+    // Alpha bruité aussi : le bord de la marque cesse d'être net et prévisible.
+    d[i + 3] = Math.max(0, Math.min(255, d[i + 3] + (next() - 0.5) * amp * 0.6));
+  }
+  ctx.putImageData(img, 0, 0);
 }
 
 function resetShadow(ctx: CanvasRenderingContext2D) {
@@ -190,12 +233,26 @@ export function renderOverlay(
   cfg: WatermarkConfig,
   logo: HTMLImageElement | null,
 ): string {
+  return renderLayer(width, height, cfg, logo).canvas.toDataURL("image/png");
+}
+
+/**
+ * Calque transparent du filigrane, seul. L'aperçu le fusionne au fond avec le
+ * même mode que le moteur : ce qui est montré est ce qui est écrit dans le
+ * fichier, bruit compris.
+ */
+export function renderLayer(
+  width: number,
+  height: number,
+  cfg: WatermarkConfig,
+  logo: HTMLImageElement | null,
+): { canvas: HTMLCanvasElement; box: Box } {
   const k = Math.min(1, MAX_OVERLAY_SIDE / Math.max(width, height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width * k));
   canvas.height = Math.max(1, Math.round(height * k));
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D indisponible");
-  drawWatermark(ctx, canvas.width, canvas.height, cfg, logo);
-  return canvas.toDataURL("image/png");
+  const box = drawWatermark(ctx, canvas.width, canvas.height, cfg, logo);
+  return { canvas, box };
 }

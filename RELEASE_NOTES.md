@@ -2,6 +2,18 @@
 
 ---
 
+## v1.13.0 — 2026-09-17
+
+### Nouveautés — resistance a l effacement
+- Modes de fusion : le filigrane altere les pixels d origine au lieu de les recouvrir (image, PDF, SVG, HTML)
+- Bruit dans la marque : ses bords et son remplissage cessent d etre previsibles
+- Mosaique irreguliere : taille, angle et decalage differents a chaque repetition
+- Placement automatique sur la zone la plus detaillee de l image
+- Signature invisible inscrite dans les frequences de l image, repetee sur toute sa surface : elle survit au reencodage JPEG, a un repeint partiel et a l effacement de la marque visible. Perdue en cas de recadrage ou de redimensionnement.
+- Lecture d une signature depuis n importe quelle image
+
+---
+
 ## v1.12.1 — 2026-09-17
 
 ### Corrections

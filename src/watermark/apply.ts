@@ -85,7 +85,11 @@ export async function watermarkFile(f: StudioFile, o: ApplyOptions, preloaded?: 
       return invoke("apply_watermark", {
         inputPath: f.path,
         layers: [{ overlay: renderOverlay(src.width, src.height, o.cfg, o.logo), pages: [] }],
-        outputFormat: fmt, quality: o.quality, ...base,
+        outputFormat: fmt, quality: o.quality,
+        blend: o.cfg.blend,
+        // Signature invisible : seules les images raster la portent.
+        signature: f.ext === "svg" ? null : o.cfg.signature || null,
+        ...base,
       });
     }
 
@@ -95,7 +99,7 @@ export async function watermarkFile(f: StudioFile, o: ApplyOptions, preloaded?: 
       return invoke("apply_watermark", {
         inputPath: f.path,
         layers: [{ overlay: renderOverlay(size.width * k, size.height * k, o.cfg, o.logo), pages: [] }],
-        outputFormat: f.ext, quality: null, ...base,
+        outputFormat: f.ext, quality: null, blend: "normal", signature: null, ...base,
       });
     }
 
@@ -121,6 +125,9 @@ export async function watermarkFile(f: StudioFile, o: ApplyOptions, preloaded?: 
           layers,
           outputFormat: "pdf",
           quality: null,
+          blend: o.cfg.blend,
+          signature: null, // un PDF n'est pas une image : pas de signature fréquentielle
+
           // Document converti : le PDF source est temporaire, la sortie va à côté de l'original.
           outputDir: o.outputDir ?? (converted ? dirOf(f.path) : null),
           outputName: outputName ?? (converted ? `${stemOf(f.name)}_filigrane` : null),

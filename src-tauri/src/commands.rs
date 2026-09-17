@@ -732,10 +732,14 @@ pub async fn apply_watermark(
     output_dir: Option<String>,
     output_name: Option<String>,
     quality: Option<u8>,
+    blend: Option<String>,
+    signature: Option<String>,
 ) -> Result<ConversionResult, String> {
     if layers.is_empty() {
         return Err("Aucun calque de filigrane fourni".to_string());
     }
+    let blend = crate::watermark_engine::Blend::from_str(blend.as_deref().unwrap_or("normal"));
+    let signature = signature.filter(|s| !s.trim().is_empty());
     let fmt = output_format.to_lowercase();
     let out = watermark_output_path(&input_path, &fmt, output_dir, output_name)?;
 
@@ -744,21 +748,29 @@ pub async fn apply_watermark(
             return Err(format!("Un document .{} garde son format : sortie .{} refusée", ext_of(&input_path), fmt));
         }
         crate::watermark_engine::overlay_png_bytes(&layers[0].overlay)
-            .and_then(|png| crate::watermark_docs::apply_visual(&input_path, &fmt, &png, &out))
+            .and_then(|png| crate::watermark_docs::apply_visual(&input_path, &fmt, &png, blend.css_name(), &out))
     } else if fmt == "pdf" {
         let layers: Vec<_> = layers
             .into_iter()
             .map(|l| crate::watermark_engine::Layer { overlay: l.overlay, pages: l.pages })
             .collect();
-        crate::watermark_engine::apply_to_pdf(&input_path, &layers, &out)
+        crate::watermark_engine::apply_to_pdf(&input_path, &layers, blend, &out)
     } else {
         let format = OutputFormat::from_str(&fmt).map_err(|e| e.to_string())?;
         let opts = ImageOptions { quality, ..Default::default() };
-        crate::watermark_engine::apply_to_image(&input_path, &layers[0].overlay, &out, &format, &opts)
+        crate::watermark_engine::apply_to_image(&input_path, &layers[0].overlay, &out, &format, &opts, blend, signature.as_deref())
     }
     .map_err(|e| e.to_string())?;
 
     Ok(done(out))
+}
+
+/// Relit la signature invisible d'une image, s'il y en a une.
+#[tauri::command]
+pub async fn watermark_read_signature(input_path: String) -> Result<Option<String>, String> {
+    check_input_size(&input_path)?;
+    let img = image::open(&input_path).map_err(|e| format!("Ouverture '{}': {}", input_path, e))?;
+    Ok(crate::watermark_stego::extract(&img).ok())
 }
 
 /// Octets bruts d'un PDF (aperçu pdf.js) ou d'une police (studio filigrane).
