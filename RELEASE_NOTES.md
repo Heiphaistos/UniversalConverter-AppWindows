@@ -2,6 +2,13 @@
 
 ---
 
+## v1.12.1 — 2026-09-17
+
+### Corrections
+- Tatouage sonore : un premier passage réglé au-delà de la durée de la piste faisait échouer le fichier ; la marque est maintenant posée au début de la piste
+
+---
+
 ## v1.12.0 — 2026-09-17
 
 ### Nouveautés

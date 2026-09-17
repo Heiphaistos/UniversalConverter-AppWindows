@@ -181,7 +181,7 @@ export default function App() {
             </svg>
           </div>
           <h1 className="text-base font-bold">Universal Converter</h1>
-          <span className="text-xs text-slate-500 bg-slate-800 rounded px-2 py-0.5">v1.12.0</span>
+          <span className="text-xs text-slate-500 bg-slate-800 rounded px-2 py-0.5">v1.12.1</span>
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap justify-end">

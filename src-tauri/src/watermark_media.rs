@@ -120,7 +120,11 @@ pub fn mix(track: &mut DecodedAudio, sound: &DecodedAudio, mark: &AudioMark) -> 
     let total_frames = track.samples.len() / tc;
     let step = if mark.interval_s > 0.0 { frame_of(mark.interval_s).max(1) } else { usize::MAX };
 
+    // Décalage au-delà de la piste (piste courte) : on marque quand même, au début.
     let mut start = frame_of(mark.offset_s);
+    if start >= total_frames {
+        start = 0;
+    }
     let mut count = 0;
     while start < total_frames {
         let begin = start * tc;
@@ -197,6 +201,16 @@ mod tests {
         assert_eq!(track.samples[1100], 0, "pas de débordement");
         assert_eq!(track.samples[4000], 500);
         assert_eq!(track.samples[2000], 0);
+    }
+
+    /// Piste plus courte que le décalage demandé : un passage au début, pas d'échec.
+    #[test]
+    fn audio_piste_plus_courte_que_le_decalage() {
+        let mut track = DecodedAudio { samples: vec![0; 1_000], channels: 1, sample_rate: 1000 };
+        let sound = DecodedAudio { samples: vec![9_000; 100], channels: 1, sample_rate: 1000 };
+        let n = mix(&mut track, &sound, &AudioMark { interval_s: 30.0, offset_s: 5.0, volume: 1.0 }).unwrap();
+        assert_eq!(n, 1, "un seul passage");
+        assert_eq!(track.samples[0], 9_000, "posé au début de la piste");
     }
 
     #[test]
