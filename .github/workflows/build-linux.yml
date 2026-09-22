@@ -58,7 +58,9 @@ jobs:
 
       - name: List produced bundles
         if: always()
-        run: find src-tauri/target/release/bundle -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -print
+        # Cherche depuis la racine : un workspace Cargo place `target/` ailleurs
+        # que sous src-tauri. Ne doit jamais faire echouer le job.
+        run: find . -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -not -path './node_modules/*' -print || true
 
       - uses: actions/upload-artifact@v4
         if: success()
@@ -66,6 +68,6 @@ jobs:
           name: linux-bundles
           if-no-files-found: warn
           path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-            src-tauri/target/release/bundle/appimage/*.AppImage
+            **/target/release/bundle/deb/*.deb
+            **/target/release/bundle/rpm/*.rpm
+            **/target/release/bundle/appimage/*.AppImage
