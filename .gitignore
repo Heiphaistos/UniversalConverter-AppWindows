@@ -39,3 +39,8 @@ screenshots/
 # de qui ne possede pas le certificat (CI comprise).
 # Voir D:/Projet/outils/signer/LISEZMOI.md
 src-tauri/tauri.windows.conf.json
+
+# Signature de code : empreinte locale + installateur de certificat.
+# Gitignore pour ne pas casser le build de qui ne possede pas le
+# certificat (CI comprise). Voir D:/Projet/outils/signer/LISEZMOI.md
+src-tauri/certificat/
