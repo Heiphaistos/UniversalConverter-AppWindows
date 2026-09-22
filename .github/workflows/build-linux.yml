@@ -52,7 +52,9 @@ jobs:
 
       - name: Build
         working-directory: .
-        run: npx --yes @tauri-apps/cli@latest build
+        # Les artefacts d'updater exigent TAURI_SIGNING_PRIVATE_KEY ; ce job verifie
+        # la compilation et produit les paquets, il n'a pas a signer une mise a jour.
+        run: npx --yes @tauri-apps/cli@latest build --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: List produced bundles
         if: always()
