@@ -5,6 +5,7 @@ mod conversion_engine;
 mod data_engine;
 mod doc_engine;
 mod office_engine;
+mod path_guard;
 mod pdf_engine;
 mod text_engine;
 mod watermark_engine;

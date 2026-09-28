@@ -35,67 +35,44 @@ const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500 MB
 // ── Validation du chemin de sortie (anti path traversal + symlink) ────────────
 
 fn validate_output_path(path: &str) -> Result<(), String> {
-    use std::path::Component;
-
     let p = std::path::Path::new(path);
-
-    // Bloquer les chemins UNC (\\server\share)
-    let raw = p.to_string_lossy();
-    if raw.starts_with("\\\\") || raw.starts_with("//") {
-        return Err("Chemin UNC refusé : écriture sur des partages réseau interdite".to_string());
-    }
-
-    // Bloquer les séquences '..'
-    for component in p.components() {
-        if matches!(component, Component::ParentDir) {
-            return Err("Chemin de sortie invalide : séquence '..' interdite".to_string());
-        }
-    }
-
-    // Canonicaliser via le répertoire parent pour détecter les symlinks/jonctions
+    // Valider AVANT de créer quoi que ce soit (échec fermé si la canonicalisation échoue)
+    crate::path_guard::check_write_target(p)?;
     if let Some(parent) = p.parent() {
-        // Créer le répertoire parent si nécessaire (cas output_dir personnalisé)
-        if !parent.exists() {
-            // Tentative silencieuse de création; l'échec sera géré à l'écriture
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(canonical) = parent.canonicalize() {
-            let s = canonical.to_string_lossy().to_lowercase();
-            let forbidden = [
-                "c:\\windows",
-                "c:\\program files",
-                "c:\\program files (x86)",
-                "c:\\programdata",
-                "c:\\system",
-            ];
-            if forbidden.iter().any(|f| s.starts_with(f)) {
-                return Err(format!(
-                    "Chemin refusé : écriture interdite dans une zone système protégée ({})",
-                    canonical.display()
-                ));
-            }
-        }
+        std::fs::create_dir_all(parent).map_err(|e| format!("Création du dossier de sortie impossible : {e}"))?;
     }
-
     Ok(())
 }
 
 // ── Validation d'un répertoire de sortie personnalisé ─────────────────────────
 
 fn validate_output_dir(dir: &str) -> Result<(), String> {
-    use std::path::Component;
-    let p = std::path::Path::new(dir);
-    let raw = p.to_string_lossy();
+    crate::path_guard::check_write_target(std::path::Path::new(dir)).map(|_| ())
+}
 
-    if raw.starts_with("\\\\") || raw.starts_with("//") {
-        return Err("Répertoire UNC refusé".to_string());
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn output_dir_system_refused() {
+        #[cfg(windows)]
+        let sys = std::env::var("SystemRoot").unwrap();
+        #[cfg(not(windows))]
+        let sys = "/etc".to_string();
+        assert!(validate_output_dir(&sys).is_err());
+        assert!(validate_output_path(&format!("{sys}/uc_nope/x.png")).is_err());
+        assert!(!std::path::Path::new(&sys).join("uc_nope").exists());
     }
-    for component in p.components() {
-        if matches!(component, Component::ParentDir) {
-            return Err("Répertoire de sortie invalide : séquence '..' interdite".to_string());
-        }
+
+    #[test]
+    fn output_path_home_creates_parent_after_validation() {
+        let dir = std::env::temp_dir().join("uc_path_tests_dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        validate_output_path(&dir.join("out.png").to_string_lossy()).unwrap();
+        assert!(dir.is_dir());
+        let _ = std::fs::remove_dir_all(&dir);
     }
-    Ok(())
 }
 
 // ── Chemin de fichier temporaire unique (temp dir système) ────────────────────
