@@ -8,13 +8,16 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       # Dépendances système de Tauri v2. webkit2gtk-4.1 est la version attendue
       # par Tauri 2 (la 4.0 est celle de Tauri 1) ; patchelf est requis par le
@@ -34,15 +37,15 @@ jobs:
             wget \
             file
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: ./package-lock.json
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri
 
@@ -54,7 +57,7 @@ jobs:
         working-directory: .
         # Les artefacts d'updater exigent TAURI_SIGNING_PRIVATE_KEY ; ce job verifie
         # la compilation et produit les paquets, il n'a pas a signer une mise a jour.
-        run: npx --yes @tauri-apps/cli@latest build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npx --yes @tauri-apps/cli@2.12.0 build --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: List produced bundles
         if: always()
@@ -62,7 +65,7 @@ jobs:
         # que sous src-tauri. Ne doit jamais faire echouer le job.
         run: find . -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -not -path './node_modules/*' -print || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: success()
         with:
           name: linux-bundles
