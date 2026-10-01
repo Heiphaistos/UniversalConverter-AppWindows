@@ -2,6 +2,15 @@
 
 ---
 
+## v1.15.0 — 2026-10-01
+
+### Securite
+- Control Flow Guard active sur l executable Windows
+- Garde des chemins systeme reparee : comparaison sur chemins canonises, refus en cas de doute, appliquee aussi au dossier de sortie personnalise (1.14.0, jamais publiee)
+- Permission d ecriture du plugin fs retiree (inutilisee par l interface)
+
+---
+
 ## v1.13.0 — 2026-09-17
 
 ### Nouveautés — resistance a l effacement
