@@ -1,6 +1,6 @@
 # UniversalConverter
 
-![Version](https://img.shields.io/badge/version-1.15.0-blue)
+![Version](https://img.shields.io/badge/version-1.16.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Stack](https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20React%20%2B%20Rust-orange)
 ![License](https://img.shields.io/badge/license-Propriétaire-red)
@@ -141,6 +141,12 @@ build.bat
 L'exécutable est généré dans `src-tauri/target/release/bundle/`.
 
 ---
+
+### Mises à jour automatiques
+
+L'application vérifie au démarrage si une version signée est publiée sur GitHub, propose de l'installer (avec les notes), puis redémarre. Bouton « Mises à jour » dans l'en-tête : recherche manuelle et case « Vérifier les mises à jour automatiquement » pour couper la vérification. La version portable n'est pas mise à jour seule.
+
+Publication : `build.bat` (clé `D:\MDP\universalconverter-updater.key`, hors dépôt) puis `scripts/make-latest-json.mjs` ; joindre l'installeur, son `.sig` et `latest.json` à la release `vX.Y.Z`.
 
 ## Sécurité
 

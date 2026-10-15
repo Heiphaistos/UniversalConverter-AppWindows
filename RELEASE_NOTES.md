@@ -2,6 +2,16 @@
 
 ---
 
+## v1.16.0 — 2026-10-15
+
+### Mise a jour automatique
+- Verification au demarrage (desactivable) et bouton « Rechercher une mise a jour » dans « Mises a jour »
+- Manifeste et installeur signes (minisign), installation silencieuse puis redemarrage
+- Le reglage « Verifier les mises a jour automatiquement » est actif par defaut
+- La version portable ne se met pas a jour seule : reinstaller via l'installeur
+
+---
+
 ## v1.15.0 — 2026-10-01
 
 ### Securite

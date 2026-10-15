@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title UniversalConverter v1.15.0 - Build Release
+title UniversalConverter v1.16.0 - Build Release
 cd /d "%~dp0"
 
 :: ── Dossier logs ─────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ if exist ".logs\build.log" (
 
 echo.
 echo  ================================================
-echo   UniversalConverter v1.15.0  ^|  Build Release
+echo   UniversalConverter v1.16.0  ^|  Build Release
 echo  ================================================
 echo   Logs : .logs\build.log
 echo  ================================================
@@ -45,6 +45,8 @@ echo       OK
 
 :: ── 4. Build avec logs temps reel ────────────────────────────────────────────
 echo [4/5] Compilation (peut prendre plusieurs minutes)...
+:: Cle de signature des mises a jour (hors depot). Sans elle, createUpdaterArtifacts echoue.
+if not defined TAURI_SIGNING_PRIVATE_KEY_PATH if exist "D:\MDP\universalconverter-updater.key" set "TAURI_SIGNING_PRIVATE_KEY_PATH=D:\MDP\universalconverter-updater.key"
 echo.
 :: [AUDIT-OK] Commande statique - Tee-Object sans equivalent batch natif
 :: -NoProfile + -NonInteractive : securite accrue (pas de chargement profil, pas de prompt)
@@ -65,6 +67,8 @@ if %BUILD_CODE% NEQ 0 (
     echo  Exe    : src-tauri\target\release\universalconverter.exe
     echo  Bundle : src-tauri\target\release\bundle\
     echo  Log    : .logs\build.log
+    node scripts\make-latest-json.mjs
+    echo  Release : joindre setup.exe + .sig + latest.json ^(dossier bundle\nsis^)
 )
 
 :: [AUDIT-OK] Commande statique - Add-Content avec valeur litterale, aucune entree externe
