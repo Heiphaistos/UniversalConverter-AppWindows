@@ -46,7 +46,8 @@ echo       OK
 :: ── 4. Build avec logs temps reel ────────────────────────────────────────────
 echo [4/5] Compilation (peut prendre plusieurs minutes)...
 :: Cle de signature des mises a jour (hors depot). Sans elle, createUpdaterArtifacts echoue.
-if not defined TAURI_SIGNING_PRIVATE_KEY_PATH if exist "D:\MDP\universalconverter-updater.key" set "TAURI_SIGNING_PRIVATE_KEY_PATH=D:\MDP\universalconverter-updater.key"
+if not defined TAURI_SIGNING_PRIVATE_KEY if exist "D:\MDP\universalconverter-updater.key" for /f "usebackq delims=" %%K in ("D:\MDP\universalconverter-updater.key") do set "TAURI_SIGNING_PRIVATE_KEY=%%K"
+set "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
 echo.
 :: [AUDIT-OK] Commande statique - Tee-Object sans equivalent batch natif
 :: -NoProfile + -NonInteractive : securite accrue (pas de chargement profil, pas de prompt)
