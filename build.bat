@@ -45,13 +45,11 @@ echo       OK
 
 :: ── 4. Build avec logs temps reel ────────────────────────────────────────────
 echo [4/5] Compilation (peut prendre plusieurs minutes)...
-:: Cle de signature des mises a jour (hors depot). Sans elle, createUpdaterArtifacts echoue.
-if not defined TAURI_SIGNING_PRIVATE_KEY if exist "D:\MDP\universalconverter-updater.key" for /f "usebackq delims=" %%K in ("D:\MDP\universalconverter-updater.key") do set "TAURI_SIGNING_PRIVATE_KEY=%%K"
-set "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
+:: Cle de signature des mises a jour : D:/MDP, lue par scripts/build-signed.mjs.
 echo.
 :: [AUDIT-OK] Commande statique - Tee-Object sans equivalent batch natif
 :: -NoProfile + -NonInteractive : securite accrue (pas de chargement profil, pas de prompt)
-powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Continue'; npm run tauri build 2>&1 | ForEach-Object { [string]$_ } | Tee-Object -FilePath '.logs\build.log' -Append"
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Continue'; node scripts/build-signed.mjs 2>&1 | ForEach-Object { [string]$_ } | Tee-Object -FilePath '.logs\build.log' -Append"
 set "BUILD_CODE=%ERRORLEVEL%"
 
 :: ── 5. Resultat ──────────────────────────────────────────────────────────────

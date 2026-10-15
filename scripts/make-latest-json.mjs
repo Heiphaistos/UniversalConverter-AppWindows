@@ -10,7 +10,7 @@ const exe = readdirSync(dir).find((f) => f.includes(`_${version}_`) && f.endsWit
 if (!exe) throw new Error(`Installeur ${version} introuvable dans ${dir}`);
 
 const signature = readFileSync(`${dir}/${exe}.sig`, "utf-8").trim();
-const notes = (readFileSync("RELEASE_NOTES.md", "utf-8").split(/^## /m)
+const notes = (readFileSync("RELEASE_NOTES.md", "utf-8").replace(//g, "").split(/^## /m)
   .find((s) => s.startsWith(`v${version} `)) ?? "").split("\n").slice(1).join("\n").trim();
 
 const manifest = {

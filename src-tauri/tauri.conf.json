@@ -43,7 +43,7 @@
       "endpoints": [
         "https://github.com/Heiphaistos/UniversalConverter-AppWindows/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg3NzY1OEU1OTMyMzczRDgKUldUWWN5T1Q1VmgyaDNqVzJUTitERUovTEgrK1dBOGJrcHI1NVBjQkw2dk5pejFrY1BnS1JqNHcK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1OTdEMEI4MjlFNjFCQTEKUldTaEcrWXB1TkNYWmM1dGxDcFp1VDRQNHBWMEdBZFErcloxV2NJcllwd3U5SDUvNzhXTjdLUUwK",
       "windows": {
         "installMode": "passive"
       }
