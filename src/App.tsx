@@ -1,4 +1,6 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import UpdatePanel from "./components/UpdatePanel";
+import { checkForUpdate, loadAutoCheck } from "./updater";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FileUploader } from "./components/FileUploader";
@@ -13,6 +15,7 @@ import {
   FileItem, ConversionResult, HistoryItem,
 } from "./types";
 
+const APP_VERSION = __APP_VERSION__;
 const HISTORY_KEY = "uc_history";
 const MAX_HISTORY = 50;
 
@@ -30,8 +33,11 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showMergePDF, setShowMergePDF] = useState(false);
   const [showWatermark, setShowWatermark] = useState(false);
+  const [showUpdate, setShowUpdate] = useState(false);
   const [mergePromptIds, setMergePromptIds] = useState<string[] | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+
+  useEffect(() => { if (loadAutoCheck()) void checkForUpdate(true); }, []);
 
   function showToast(msg: string, ok: boolean) {
     setToast({ msg, ok });
@@ -181,7 +187,7 @@ export default function App() {
             </svg>
           </div>
           <h1 className="text-base font-bold">Universal Converter</h1>
-          <span className="text-xs text-slate-500 bg-slate-800 rounded px-2 py-0.5">v1.15.0</span>
+          <span className="text-xs text-slate-500 bg-slate-800 rounded px-2 py-0.5">v{APP_VERSION}</span>
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -201,6 +207,11 @@ export default function App() {
               ✕
             </button>
           )}
+
+          <button onClick={() => setShowUpdate(true)}
+            className="text-xs text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition-colors border border-slate-700">
+            Mises à jour
+          </button>
 
           {/* Filigrane */}
           <button onClick={() => setShowWatermark(true)}
@@ -311,6 +322,8 @@ export default function App() {
       )}
 
       {/* Toast notification */}
+      {showUpdate && <UpdatePanel version={APP_VERSION} onClose={() => setShowUpdate(false)} />}
+
       {toast && (
         <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl text-sm shadow-xl z-50 border transition-all
           ${toast.ok

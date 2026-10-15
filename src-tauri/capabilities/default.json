@@ -9,6 +9,8 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "opener:allow-open-path",
-    "opener:allow-reveal-item-in-dir"
+    "opener:allow-reveal-item-in-dir",
+    "updater:default",
+    "process:allow-restart"
   ]
 }
