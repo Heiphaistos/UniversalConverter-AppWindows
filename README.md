@@ -146,7 +146,7 @@ L'exécutable est généré dans `src-tauri/target/release/bundle/`.
 
 L'application vérifie au démarrage si une version signée est publiée sur GitHub, propose de l'installer (avec les notes), puis redémarre. Bouton « Mises à jour » dans l'en-tête : recherche manuelle et case « Vérifier les mises à jour automatiquement » pour couper la vérification. La version portable n'est pas mise à jour seule.
 
-Publication : `build.bat` (clé `D:\MDP\universalconverter-updater.key`, hors dépôt) puis `scripts/make-latest-json.mjs` ; joindre l'installeur, son `.sig` et `latest.json` à la release `vX.Y.Z`.
+Publication : `build.bat` (clé hors dépôt : `UC_UPDATER_KEY`, sinon `%MDP_DIR%\universalconverter-updater.key`) puis `scripts/make-latest-json.mjs` ; joindre l'installeur, son `.sig` et `latest.json` à la release `vX.Y.Z`.
 
 ## Sécurité
 
