@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title UniversalConverter v1.16.0 - Build Release
+title UniversalConverter v1.17.0 - Build Release
 cd /d "%~dp0"
 
 :: ── Dossier logs ─────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ if exist ".logs\build.log" (
 
 echo.
 echo  ================================================
-echo   UniversalConverter v1.16.0  ^|  Build Release
+echo   UniversalConverter v1.17.0  ^|  Build Release
 echo  ================================================
 echo   Logs : .logs\build.log
 echo  ================================================
@@ -45,7 +45,7 @@ echo       OK
 
 :: ── 4. Build avec logs temps reel ────────────────────────────────────────────
 echo [4/5] Compilation (peut prendre plusieurs minutes)...
-:: Cle de signature des mises a jour : D:/MDP, lue par scripts/build-signed.mjs.
+:: Cle de signature des mises a jour : UC_UPDATER_KEY ou MDP_DIR, lue par scripts/build-signed.mjs.
 echo.
 :: [AUDIT-OK] Commande statique - Tee-Object sans equivalent batch natif
 :: -NoProfile + -NonInteractive : securite accrue (pas de chargement profil, pas de prompt)
