@@ -67,7 +67,7 @@ pub fn pptx_to_text(input_path: &str) -> Result<String> {
         .filter(|&i| {
             archive
                 .by_index(i)
-                .map(|f| f.name().starts_with("ppt/slides/slide") && f.name().ends_with(".xml"))
+                .map(|f| f.name().is_ok_and(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml")))
                 .unwrap_or(false)
         })
         .count();

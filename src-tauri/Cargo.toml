@@ -39,7 +39,7 @@ resvg = "0.44"
 pulldown-cmark = "0.11"
 
 # Office : lecture ZIP (DOCX, PPTX, XLSX sont des archives ZIP)
-zip = "2"
+zip = "9"
 
 # Office : parsing XML interne (DOCX, PPTX)
 quick-xml = "0.41"

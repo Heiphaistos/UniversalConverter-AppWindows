@@ -48,7 +48,7 @@ fn read_zip(input_path: &str) -> Result<Vec<Entry>> {
         if entry.is_dir() {
             continue;
         }
-        let Some(name) = sanitize_entry_name(entry.name()) else { continue };
+        let Some(name) = sanitize_entry_name(&entry.name().unwrap_or_default()) else { continue };
         total = total.saturating_add(entry.size());
         if total > MAX_TOTAL_BYTES {
             return Err(anyhow!("Archive trop volumineuse une fois décompressée (> 512 MB)"));

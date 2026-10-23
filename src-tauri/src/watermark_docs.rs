@@ -43,8 +43,8 @@ impl Package {
             }
             let mut data = Vec::new();
             e.by_ref().take(MAX_TOTAL_BYTES).read_to_end(&mut data)?;
-            order.push(e.name().to_string());
-            files.insert(e.name().to_string(), data);
+            order.push(e.name().unwrap_or_default().to_string());
+            files.insert(e.name().unwrap_or_default().to_string(), data);
         }
         Ok(Self { order, files })
     }
@@ -700,7 +700,7 @@ mod tests {
         let back = tmp("c_back.txt");
         crate::doc_engine::epub_to_text(&e_out, &back).expect("EPUB relisible");
         assert!(std::fs::read_to_string(&back).unwrap().contains("Chapitre unique"));
-        let first = zip::ZipArchive::new(std::fs::File::open(&e_out).unwrap()).unwrap().by_index(0).unwrap().name().to_string();
+        let first = zip::ZipArchive::new(std::fs::File::open(&e_out).unwrap()).unwrap().by_index(0).unwrap().name().unwrap().to_string();
         assert_eq!(first, "mimetype", "mimetype doit rester en tête");
 
         let (o_src, o_out) = (tmp("c.odt"), tmp("c_wm.odt"));
