@@ -2,6 +2,12 @@
 
 ---
 
+## v1.17.1 — 2026-10-28
+
+- Mise à jour de sécurité des dépendances de build (vite 7.3.7, source-map-js 1.2.2).
+
+---
+
 ## v1.16.0 — 2026-10-15
 
 ### Mise a jour automatique
