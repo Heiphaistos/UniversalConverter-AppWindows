@@ -1,6 +1,6 @@
 [package]
 name = "universalconverter"
-version = "1.17.1"
+version = "1.18.0"
 description = "Universal File Converter"
 authors = ["Momo"]
 edition = "2021"
@@ -45,7 +45,7 @@ zip = "9"
 quick-xml = "0.41"
 
 # Office : lecture Excel (XLS, XLSX, ODS)
-calamine = "0.36"
+calamine = "0.38"
 
 # Office : écriture XLSX
 rust_xlsxwriter = "0.93"
