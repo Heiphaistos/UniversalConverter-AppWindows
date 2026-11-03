@@ -1,14 +1,14 @@
 {
   "name": "universalconverter",
   "private": true,
-  "version": "1.17.1",
+  "version": "1.18.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run src && node scripts/build-signed.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
