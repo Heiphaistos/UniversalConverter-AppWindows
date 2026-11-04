@@ -2,6 +2,13 @@
 
 ---
 
+## v1.18.0 — 2026-11-04
+
+- Sécurité des dépendances : calamine 0.38 (RUSTSEC-2026-0436), tauri-plugin-updater 2.14.1, epub 2.1.6 et rust_xlsxwriter 0.102 retirent les versions vulnérables de `zip` (21 → 8 alertes ; restent `zip` 0.6.6/8.6.0 via epub-builder et docx-rs, sans correctif amont, extraction jamais utilisée).
+- Conversions Excel : les cellules de date sortent au format `AAAA-MM-JJ` (avec l'heure si elle n'est pas minuit) au lieu d'être vides.
+
+---
+
 ## v1.17.1 — 2026-10-28
 
 - Mise à jour de sécurité des dépendances de build (vite 7.3.7, source-map-js 1.2.2).

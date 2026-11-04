@@ -45,7 +45,7 @@ zip = "9"
 quick-xml = "0.41"
 
 # Office : lecture Excel (XLS, XLSX, ODS)
-calamine = "0.38"
+calamine = { version = "0.38", features = ["dates"] }
 
 # Office : écriture XLSX
 rust_xlsxwriter = "0.102"

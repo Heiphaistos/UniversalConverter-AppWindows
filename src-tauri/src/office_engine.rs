@@ -138,7 +138,20 @@ fn cell_to_string(data: &calamine::Data) -> String {
         calamine::Data::Bool(b)   => b.to_string(),
         calamine::Data::Error(e)  => format!("#{:?}", e),
         calamine::Data::Empty     => String::new(),
-        _                         => String::new(),
+        calamine::Data::DateTime(dt) => excel_datetime_to_string(dt),
+        calamine::Data::DateTimeIso(s) | calamine::Data::DurationIso(s) => s.clone(),
+    }
+}
+
+/// Date Excel -> `AAAA-MM-JJ` (ou `AAAA-MM-JJ HH:MM:SS` si l'heure n'est pas minuit).
+/// Les durees et les valeurs hors plage gardent leur numero de serie Excel.
+fn excel_datetime_to_string(dt: &calamine::ExcelDateTime) -> String {
+    match dt.as_datetime() {
+        Some(d) if !dt.is_duration() => {
+            let s = d.format("%Y-%m-%d %H:%M:%S").to_string();
+            s.strip_suffix(" 00:00:00").map(str::to_owned).unwrap_or(s)
+        }
+        _ => dt.to_string(),
     }
 }
 
@@ -366,3 +379,21 @@ fn parse_xml_text(xml: &str, text_tag: &[u8], paragraph_tag: &[u8]) -> String {
     output
 }
 
+
+#[cfg(test)]
+mod tests_dates {
+    use super::cell_to_string;
+    use calamine::{Data, ExcelDateTime, ExcelDateTimeType};
+
+    #[test]
+    fn date_excel_lisible() {
+        // 45964 = 2025-11-03 (epoque 1899-12-30)
+        let d = Data::DateTime(ExcelDateTime::new(45964.0, ExcelDateTimeType::DateTime, false));
+        assert_eq!(cell_to_string(&d), "2025-11-03");
+        let dh = Data::DateTime(ExcelDateTime::new(45964.5, ExcelDateTimeType::DateTime, false));
+        assert_eq!(cell_to_string(&dh), "2025-11-03 12:00:00");
+        let dur = Data::DateTime(ExcelDateTime::new(1.5, ExcelDateTimeType::TimeDelta, false));
+        assert_eq!(cell_to_string(&dur), "1.5");
+        assert_eq!(cell_to_string(&Data::DateTimeIso("2025-11-03T10:00:00".into())), "2025-11-03T10:00:00");
+    }
+}
